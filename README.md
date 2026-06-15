@@ -1,6 +1,6 @@
-# Mobile Bridge iOS PoC v0.4
+# Mobile Bridge iOS PoC v0.5
 
-Quarto test iOS per proseguire la strada senza Mac fisico, compilando con GitHub Actions su runner macOS.
+Quinto test iOS, sempre senza Mac fisico, compilando con GitHub Actions su runner macOS.
 
 ## Cosa fa
 
@@ -9,21 +9,17 @@ Quarto test iOS per proseguire la strada senza Mac fisico, compilando con GitHub
 - Salvataggio sessione in UserDefaults.
 - Recupero sessione al riavvio.
 - Home minimale con statistiche di oggi.
-- Pull-to-refresh sulla Home.
-- Lista ordini recenti.
-- Pull-to-refresh sulla lista ordini.
-- Dettaglio ordine:
-  - cliente;
-  - stato;
-  - totali;
-  - indirizzo consegna;
-  - prodotti;
-  - corriere/tracking se disponibili;
-  - storico stati.
-- Nuova funzione v0.4:
-  - lettura stati ordine da `get_orders_statuses`;
-  - cambio stato ordine da dettaglio tramite `update_order_state`;
-  - aggiornamento del dettaglio e della lista ordini dopo il cambio stato.
+- Pull-to-refresh.
+- Ordini recenti.
+- Dettaglio ordine.
+- Cambio stato ordine.
+- Nuove funzioni v0.5:
+  - lista clienti da `get_customers`;
+  - ricerca clienti;
+  - lista prodotti da `get_products`;
+  - ricerca prodotti / EAN;
+  - immagini prodotto se disponibili;
+  - sezione online/carrelli da `get_live_activity`.
 
 ## Cosa NON fa ancora
 
@@ -31,8 +27,9 @@ Quarto test iOS per proseguire la strada senza Mac fisico, compilando con GitHub
 - Non usa TestFlight.
 - Non usa firma/certificati Apple.
 - Non ha QR scanner.
+- Non modifica ancora prodotti da iOS.
 - Non modifica ancora tracking/corriere da iOS.
-- Non ha ancora clienti/prodotti/online-carrelli.
+- Non ha ancora notifiche push iOS.
 
 ## Come provarlo su GitHub
 
@@ -43,4 +40,4 @@ Quarto test iOS per proseguire la strada senza Mac fisico, compilando con GitHub
 3. Vai su Actions.
 4. Lancia `Build iOS proof of concept`.
 
-Se la build passa, il prossimo step consigliato è la v0.5 con clienti/prodotti oppure online-carrelli.
+Se la build passa, il prossimo step consigliato è una v0.6 più operativa: dettaglio/modifica prodotto oppure tracking ordine.

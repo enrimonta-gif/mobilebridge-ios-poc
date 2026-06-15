@@ -204,6 +204,78 @@ struct OrderInfo: Identifiable {
     var id: Int { idOrder }
 }
 
+struct CustomerListItem: Identifiable {
+    let idCustomer: Int
+    let firstname: String
+    let lastname: String
+    let fullName: String
+    let email: String
+    let phone: String
+    let active: Bool
+    let newsletter: Bool
+    let dateAdd: String
+    let dateUpd: String
+    let ordersCount: Int
+    let totalPaidTaxIncl: Double
+    let lastOrderDate: String
+
+    var id: Int { idCustomer }
+
+    var displayName: String {
+        if !fullName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return fullName
+        }
+        let joined = "\(firstname) \(lastname)".trimmingCharacters(in: .whitespacesAndNewlines)
+        return joined.isEmpty ? "Cliente" : joined
+    }
+}
+
+struct ProductSummary: Identifiable {
+    let idProduct: Int
+    let name: String
+    let reference: String
+    let supplierReference: String
+    let ean13: String
+    let upc: String
+    let priceTaxExcl: Double
+    let priceTaxIncl: Double
+    let quantity: Int
+    let active: Bool
+    let manufacturerName: String
+    let imageUrl: String
+    let hasCombinations: Bool
+    let combinationsCount: Int
+
+    var id: Int { idProduct }
+}
+
+struct LiveCartSummary: Identifiable {
+    let idCart: Int
+    let idCustomer: Int
+    let idGuest: Int
+    let customerName: String
+    let email: String
+    let productsCount: Int
+    let productsQty: Int
+    let totalTaxIncl: Double
+    let currencyIso: String
+    let dateAdd: String
+    let dateUpd: String
+    let isOnline: Bool
+
+    var id: Int { idCart }
+}
+
+struct LiveActivityResponse {
+    let onlineUsersCount: Int
+    let onlineCustomersCount: Int
+    let onlineGuestsCount: Int
+    let activeCartsCount: Int
+    let minutes: Int
+    let cartHours: Int
+    let carts: [LiveCartSummary]
+}
+
 private struct PairingEnvelope: Decodable {
     let ok: Bool
     let pairing: PairingPayload
@@ -455,6 +527,71 @@ final class MobileBridgeApiClient {
         return parseOrderInfo(order)
     }
 
+    func getCustomers(apiUrl: String, sessionToken: String, limit: Int = 50, offset: Int = 0, search: String = "") async throws -> [CustomerListItem] {
+        var parameters: [String: String] = [
+            "call_function": "get_customers",
+            "session_token": sessionToken,
+            "limit": "\(limit)",
+            "offset": "\(offset)"
+        ]
+        if !search.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            parameters["search"] = search
+        }
+
+        let url = try buildUrl(base: apiUrl, parameters: parameters)
+        let data = try await getData(from: url.absoluteString, sessionToken: sessionToken)
+        let json = try parseJsonDictionary(data)
+        try ensureOk(json, defaultMessage: "Clienti non disponibili")
+
+        return arrayValue(json["customers"]).map { parseCustomerListItem($0) }
+    }
+
+    func getProducts(apiUrl: String, sessionToken: String, limit: Int = 50, offset: Int = 0, search: String = "") async throws -> [ProductSummary] {
+        var parameters: [String: String] = [
+            "call_function": "get_products",
+            "session_token": sessionToken,
+            "limit": "\(limit)",
+            "offset": "\(offset)"
+        ]
+        if !search.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            parameters["search"] = search
+        }
+
+        let url = try buildUrl(base: apiUrl, parameters: parameters)
+        let data = try await getData(from: url.absoluteString, sessionToken: sessionToken)
+        let json = try parseJsonDictionary(data)
+        try ensureOk(json, defaultMessage: "Prodotti non disponibili")
+
+        return arrayValue(json["products"]).map { parseProductSummary($0) }
+    }
+
+    func getLiveActivity(apiUrl: String, sessionToken: String) async throws -> LiveActivityResponse {
+        let url = try buildUrl(
+            base: apiUrl,
+            parameters: [
+                "call_function": "get_live_activity",
+                "session_token": sessionToken
+            ]
+        )
+
+        let data = try await getData(from: url.absoluteString, sessionToken: sessionToken)
+        let json = try parseJsonDictionary(data)
+        try ensureOk(json, defaultMessage: "Online e carrelli non disponibili")
+
+        let activity = dictValue(json["activity"])
+        let carts = arrayValue(activity["carts"]).map { parseLiveCart($0) }
+
+        return LiveActivityResponse(
+            onlineUsersCount: intValue(activity["online_users_count"]),
+            onlineCustomersCount: intValue(activity["online_customers_count"]),
+            onlineGuestsCount: intValue(activity["online_guests_count"]),
+            activeCartsCount: intValue(activity["active_carts_count"]),
+            minutes: intValue(activity["minutes"], defaultValue: 15),
+            cartHours: intValue(activity["cart_hours"], defaultValue: 48),
+            carts: carts
+        )
+    }
+
     private func getData(from urlString: String, sessionToken: String? = nil) async throws -> Data {
         guard let url = URL(string: urlString.trimmingCharacters(in: .whitespacesAndNewlines)) else {
             throw MobileBridgeApiError.invalidURL
@@ -559,6 +696,60 @@ final class MobileBridgeApiClient {
             deliveryAddress: parseAddress(dictValue(addresses["delivery"])),
             items: arrayValue(dict["items"]).map { parseOrderLine($0) },
             history: arrayValue(dict["history"]).map { parseHistoryEntry($0) }
+        )
+    }
+
+    private func parseCustomerListItem(_ dict: [String: Any]) -> CustomerListItem {
+        CustomerListItem(
+            idCustomer: intValue(dict["id_customer"]),
+            firstname: stringValue(dict["firstname"]),
+            lastname: stringValue(dict["lastname"]),
+            fullName: stringValue(dict["full_name"]),
+            email: stringValue(dict["email"]),
+            phone: stringValue(dict["phone"]),
+            active: boolValue(dict["active"]),
+            newsletter: boolValue(dict["newsletter"]),
+            dateAdd: stringValue(dict["date_add"]),
+            dateUpd: stringValue(dict["date_upd"]),
+            ordersCount: intValue(dict["orders_count"]),
+            totalPaidTaxIncl: doubleValue(dict["total_paid_tax_incl"]),
+            lastOrderDate: stringValue(dict["last_order_date"])
+        )
+    }
+
+    private func parseProductSummary(_ dict: [String: Any]) -> ProductSummary {
+        ProductSummary(
+            idProduct: intValue(dict["id_product"]),
+            name: stringValue(dict["name"]),
+            reference: stringValue(dict["reference"]),
+            supplierReference: stringValue(dict["supplier_reference"]),
+            ean13: stringValue(dict["ean13"]),
+            upc: stringValue(dict["upc"]),
+            priceTaxExcl: doubleValue(dict["price_tax_excl"]),
+            priceTaxIncl: doubleValue(dict["price_tax_incl"]),
+            quantity: intValue(dict["quantity"]),
+            active: boolValue(dict["active"]),
+            manufacturerName: stringValue(dict["manufacturer_name"]),
+            imageUrl: stringValue(dict["image_url"]),
+            hasCombinations: boolValue(dict["has_combinations"]),
+            combinationsCount: intValue(dict["combinations_count"])
+        )
+    }
+
+    private func parseLiveCart(_ dict: [String: Any]) -> LiveCartSummary {
+        LiveCartSummary(
+            idCart: intValue(dict["id_cart"]),
+            idCustomer: intValue(dict["id_customer"]),
+            idGuest: intValue(dict["id_guest"]),
+            customerName: stringValue(dict["customer_name"]),
+            email: stringValue(dict["email"]),
+            productsCount: intValue(dict["products_count"]),
+            productsQty: intValue(dict["products_qty"]),
+            totalTaxIncl: doubleValue(dict["total_tax_incl"]),
+            currencyIso: stringValue(dict["currency_iso"], defaultValue: "EUR"),
+            dateAdd: stringValue(dict["date_add"]),
+            dateUpd: stringValue(dict["date_upd"]),
+            isOnline: boolValue(dict["is_online"])
         )
     }
 

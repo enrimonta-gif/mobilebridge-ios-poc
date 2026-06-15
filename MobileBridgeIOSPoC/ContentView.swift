@@ -24,12 +24,21 @@ struct ContentView: View {
                     OrdersView(viewModel: viewModel)
                 case .orderDetail:
                     OrderDetailView(viewModel: viewModel)
+                case .customers:
+                    CustomersView(viewModel: viewModel)
+                case .products:
+                    ProductsView(viewModel: viewModel)
+                case .liveActivity:
+                    LiveActivityView(viewModel: viewModel)
                 }
             }
             .navigationTitle(viewModel.navigationTitle)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    if viewModel.screen == .orders {
+                    if viewModel.screen == .orders ||
+                        viewModel.screen == .customers ||
+                        viewModel.screen == .products ||
+                        viewModel.screen == .liveActivity {
                         Button("Home") {
                             viewModel.goHome()
                         }
@@ -65,7 +74,7 @@ private struct ConnectView: View {
                     .font(.largeTitle)
                     .bold()
 
-                Text("PoC v0.3: pairing, sessione, home, lista ordini e dettaglio ordine.")
+                Text("PoC v0.5: pairing, sessione, home, ordini, clienti, prodotti e online/carrelli.")
                     .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -138,21 +147,22 @@ private struct HomeView: View {
                     StatusBox(title: "Dashboard", message: viewModel.status)
                 }
 
-                Button {
-                    Task { await viewModel.openOrders() }
-                } label: {
-                    HStack {
-                        Image(systemName: "shippingbox")
-                        Text("Apri ordini recenti")
-                            .bold()
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                    HomeButton(title: "Ordini", systemImage: "shippingbox") {
+                        Task { await viewModel.openOrders() }
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding()
+                    HomeButton(title: "Clienti", systemImage: "person.2") {
+                        Task { await viewModel.openCustomers() }
+                    }
+                    HomeButton(title: "Prodotti", systemImage: "cube.box") {
+                        Task { await viewModel.openProducts() }
+                    }
+                    HomeButton(title: "Online / Carrelli", systemImage: "cart") {
+                        Task { await viewModel.openLiveActivity() }
+                    }
                 }
-                .buttonStyle(.borderedProminent)
-                .disabled(viewModel.isLoading)
 
-                StatusBox(title: "Nota", message: "Tira verso il basso per aggiornare la Home. Questa è ancora una prova iOS, non la versione completa Android.")
+                StatusBox(title: "Nota", message: "Tira verso il basso per aggiornare. Questa è ancora una prova iOS, non la versione completa Android.")
             }
             .padding()
         }
@@ -167,18 +177,7 @@ private struct OrdersView: View {
 
     var body: some View {
         List {
-            if viewModel.orders.isEmpty && viewModel.isLoading {
-                HStack {
-                    Spacer()
-                    ProgressView()
-                    Spacer()
-                }
-            }
-
-            if viewModel.orders.isEmpty && !viewModel.isLoading {
-                Text("Nessun ordine caricato.")
-                    .foregroundStyle(.secondary)
-            }
+            LoadingOrEmptySection(isLoading: viewModel.isLoading, isEmpty: viewModel.orders.isEmpty, emptyText: "Nessun ordine caricato.")
 
             ForEach(viewModel.orders) { order in
                 Button {
@@ -192,16 +191,224 @@ private struct OrdersView: View {
         .refreshable {
             await viewModel.loadOrders(force: true)
         }
-        .overlay {
-            if viewModel.isLoading && !viewModel.orders.isEmpty {
-                ProgressView()
-                    .padding()
-                    .background(.thinMaterial)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-            }
-        }
         .task {
             await viewModel.loadOrders(force: false)
+        }
+    }
+}
+
+private struct CustomersView: View {
+    @ObservedObject var viewModel: MobileBridgeViewModel
+
+    var body: some View {
+        List {
+            Section {
+                HStack {
+                    TextField("Cerca cliente", text: $viewModel.customerSearch)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+
+                    Button("Cerca") {
+                        Task { await viewModel.loadCustomers(force: true) }
+                    }
+                }
+            }
+
+            LoadingOrEmptySection(isLoading: viewModel.isLoading, isEmpty: viewModel.customers.isEmpty, emptyText: "Nessun cliente caricato.")
+
+            ForEach(viewModel.customers) { customer in
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text(customer.displayName)
+                            .font(.headline)
+                        Spacer()
+                        if !customer.active {
+                            Text("non attivo")
+                                .font(.caption)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(.thinMaterial)
+                                .clipShape(Capsule())
+                        }
+                    }
+
+                    if !customer.email.isEmpty {
+                        Text(customer.email)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    HStack {
+                        Text("Ordini: \(customer.ordersCount)")
+                        Spacer()
+                        Text(formatCurrency(customer.totalPaidTaxIncl))
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                    if !customer.lastOrderDate.isEmpty {
+                        Text("Ultimo ordine: \(customer.lastOrderDate)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.vertical, 6)
+            }
+        }
+        .refreshable {
+            await viewModel.loadCustomers(force: true)
+        }
+        .task {
+            await viewModel.loadCustomers(force: false)
+        }
+    }
+}
+
+private struct ProductsView: View {
+    @ObservedObject var viewModel: MobileBridgeViewModel
+
+    var body: some View {
+        List {
+            Section {
+                HStack {
+                    TextField("Cerca prodotto / EAN", text: $viewModel.productSearch)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+
+                    Button("Cerca") {
+                        Task { await viewModel.loadProducts(force: true) }
+                    }
+                }
+            }
+
+            LoadingOrEmptySection(isLoading: viewModel.isLoading, isEmpty: viewModel.products.isEmpty, emptyText: "Nessun prodotto caricato.")
+
+            ForEach(viewModel.products) { product in
+                HStack(alignment: .top, spacing: 12) {
+                    ProductThumb(urlString: product.imageUrl)
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(alignment: .firstTextBaseline) {
+                            Text(product.name.isEmpty ? "Prodotto" : product.name)
+                                .font(.headline)
+                                .lineLimit(2)
+                            Spacer()
+                            Text(formatCurrency(product.priceTaxIncl))
+                                .font(.headline)
+                        }
+
+                        if !product.reference.isEmpty {
+                            Text(product.reference)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        HStack {
+                            Text("Qty \(product.quantity)")
+                            Spacer()
+                            Text(product.active ? "Attivo" : "Non attivo")
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                        if !product.ean13.isEmpty {
+                            Text("EAN \(product.ean13)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .padding(.vertical, 6)
+            }
+        }
+        .refreshable {
+            await viewModel.loadProducts(force: true)
+        }
+        .task {
+            await viewModel.loadProducts(force: false)
+        }
+    }
+}
+
+private struct LiveActivityView: View {
+    @ObservedObject var viewModel: MobileBridgeViewModel
+
+    var body: some View {
+        List {
+            if let activity = viewModel.liveActivity {
+                Section("Online ultimi \(activity.minutes) minuti") {
+                    HStack {
+                        Text("Utenti online")
+                        Spacer()
+                        Text("\(activity.onlineUsersCount)")
+                            .bold()
+                    }
+                    HStack {
+                        Text("Clienti")
+                        Spacer()
+                        Text("\(activity.onlineCustomersCount)")
+                    }
+                    HStack {
+                        Text("Ospiti")
+                        Spacer()
+                        Text("\(activity.onlineGuestsCount)")
+                    }
+                    HStack {
+                        Text("Carrelli aperti")
+                        Spacer()
+                        Text("\(activity.activeCartsCount)")
+                            .bold()
+                    }
+                }
+
+                Section("Carrelli ultime \(activity.cartHours) ore") {
+                    if activity.carts.isEmpty {
+                        Text("Nessun carrello recente.")
+                            .foregroundStyle(.secondary)
+                    }
+
+                    ForEach(activity.carts) { cart in
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack {
+                                Text(cart.customerName.isEmpty ? "Ospite" : cart.customerName)
+                                    .font(.headline)
+                                Spacer()
+                                if cart.isOnline {
+                                    Text("online")
+                                        .font(.caption)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .background(.thinMaterial)
+                                        .clipShape(Capsule())
+                                }
+                            }
+
+                            if !cart.email.isEmpty {
+                                Text(cart.email)
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            HStack {
+                                Text("Carrello #\(cart.idCart)")
+                                Spacer()
+                                Text(formatCurrency(cart.totalTaxIncl, currencyCode: cart.currencyIso))
+                                    .bold()
+                            }
+
+                            Text("\(cart.productsQty) pezzi · \(cart.productsCount) prodotti · aggiornato \(cart.dateUpd)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.vertical, 6)
+                    }
+                }
+            } else {
+                LoadingOrEmptySection(isLoading: viewModel.isLoading, isEmpty: true, emptyText: "Nessun dato online/carrelli caricato.")
+            }
+        }
+        .refreshable {
+            await viewModel.loadLiveActivity(force: true)
+        }
+        .task {
+            await viewModel.loadLiveActivity(force: false)
         }
     }
 }
@@ -394,6 +601,74 @@ private struct OrderDetailView: View {
     }
 }
 
+private struct ProductThumb: View {
+    let urlString: String
+
+    var body: some View {
+        if !urlString.isEmpty, let url = URL(string: urlString) {
+            AsyncImage(url: url) { image in
+                image
+                    .resizable()
+                    .scaledToFill()
+            } placeholder: {
+                Image(systemName: "photo")
+                    .foregroundStyle(.secondary)
+            }
+            .frame(width: 56, height: 56)
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+        } else {
+            Image(systemName: "cube.box")
+                .frame(width: 56, height: 56)
+                .background(.thinMaterial)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+        }
+    }
+}
+
+private struct HomeButton: View {
+    let title: String
+    let systemImage: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 8) {
+                Image(systemName: systemImage)
+                    .font(.title2)
+                Text(title)
+                    .font(.headline)
+                    .multilineTextAlignment(.center)
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 88)
+        }
+        .buttonStyle(.bordered)
+    }
+}
+
+private struct LoadingOrEmptySection: View {
+    let isLoading: Bool
+    let isEmpty: Bool
+    let emptyText: String
+
+    var body: some View {
+        if isEmpty {
+            Section {
+                HStack {
+                    Spacer()
+                    if isLoading {
+                        ProgressView()
+                    } else {
+                        Text(emptyText)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                }
+            }
+        }
+    }
+}
+
 private struct MetricCard: View {
     let title: String
     let value: String
@@ -497,6 +772,9 @@ final class MobileBridgeViewModel: ObservableObject {
         case home
         case orders
         case orderDetail
+        case customers
+        case products
+        case liveActivity
     }
 
     @Published var screen: Screen = .connect
@@ -509,6 +787,11 @@ final class MobileBridgeViewModel: ObservableObject {
     @Published var selectedOrderInfo: OrderInfo?
     @Published var orderStatuses: [OrderStatus] = []
     @Published var isUpdatingOrderState = false
+    @Published var customers: [CustomerListItem] = []
+    @Published var products: [ProductSummary] = []
+    @Published var liveActivity: LiveActivityResponse?
+    @Published var customerSearch: String = ""
+    @Published var productSearch: String = ""
 
     private let api = MobileBridgeApiClient()
     private let store = SessionStore()
@@ -523,6 +806,12 @@ final class MobileBridgeViewModel: ObservableObject {
             return "Ordini"
         case .orderDetail:
             return "Dettaglio ordine"
+        case .customers:
+            return "Clienti"
+        case .products:
+            return "Prodotti"
+        case .liveActivity:
+            return "Online / Carrelli"
         }
     }
 
@@ -689,6 +978,82 @@ final class MobileBridgeViewModel: ObservableObject {
         }
     }
 
+    func openCustomers() async {
+        screen = .customers
+        await loadCustomers(force: customers.isEmpty)
+    }
+
+    func loadCustomers(force: Bool) async {
+        guard let session else { return }
+        if !force && !customers.isEmpty { return }
+
+        isLoading = true
+        status = "Carico clienti..."
+        defer { isLoading = false }
+
+        do {
+            customers = try await api.getCustomers(
+                apiUrl: session.apiUrl,
+                sessionToken: session.sessionToken,
+                limit: 50,
+                search: customerSearch
+            )
+            status = "Clienti aggiornati."
+        } catch {
+            status = "Errore clienti: \(error.localizedDescription)"
+        }
+    }
+
+    func openProducts() async {
+        screen = .products
+        await loadProducts(force: products.isEmpty)
+    }
+
+    func loadProducts(force: Bool) async {
+        guard let session else { return }
+        if !force && !products.isEmpty { return }
+
+        isLoading = true
+        status = "Carico prodotti..."
+        defer { isLoading = false }
+
+        do {
+            products = try await api.getProducts(
+                apiUrl: session.apiUrl,
+                sessionToken: session.sessionToken,
+                limit: 50,
+                search: productSearch
+            )
+            status = "Prodotti aggiornati."
+        } catch {
+            status = "Errore prodotti: \(error.localizedDescription)"
+        }
+    }
+
+    func openLiveActivity() async {
+        screen = .liveActivity
+        await loadLiveActivity(force: liveActivity == nil)
+    }
+
+    func loadLiveActivity(force: Bool) async {
+        guard let session else { return }
+        if !force && liveActivity != nil { return }
+
+        isLoading = true
+        status = "Carico online/carrelli..."
+        defer { isLoading = false }
+
+        do {
+            liveActivity = try await api.getLiveActivity(
+                apiUrl: session.apiUrl,
+                sessionToken: session.sessionToken
+            )
+            status = "Online/carrelli aggiornati."
+        } catch {
+            status = "Errore online/carrelli: \(error.localizedDescription)"
+        }
+    }
+
     func goHome() {
         screen = .home
     }
@@ -703,6 +1068,10 @@ final class MobileBridgeViewModel: ObservableObject {
         stats = nil
         orders = []
         selectedOrderInfo = nil
+        orderStatuses = []
+        customers = []
+        products = []
+        liveActivity = nil
         screen = .connect
         status = "Sessione rimossa. Incolla un nuovo Pair URL."
     }
