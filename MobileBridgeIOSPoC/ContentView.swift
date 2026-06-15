@@ -1,6 +1,14 @@
 import SwiftUI
 import UIKit
 
+private func formatCurrency(_ value: Double, currencyCode: String = "EUR") -> String {
+    let formatter = NumberFormatter()
+    formatter.numberStyle = .currency
+    formatter.currencyCode = currencyCode.isEmpty ? "EUR" : currencyCode
+    formatter.locale = Locale(identifier: "it_IT")
+    return formatter.string(from: NSNumber(value: value)) ?? String(format: "€ %.2f", value)
+}
+
 struct ContentView: View {
     @StateObject private var viewModel = MobileBridgeViewModel()
 
@@ -12,12 +20,28 @@ struct ContentView: View {
                     ConnectView(viewModel: viewModel)
                 case .home:
                     HomeView(viewModel: viewModel)
+                case .orders:
+                    OrdersView(viewModel: viewModel)
+                case .orderDetail:
+                    OrderDetailView(viewModel: viewModel)
                 }
             }
-            .navigationTitle(viewModel.screen == .connect ? "Collega shop" : "Mobile Bridge")
+            .navigationTitle(viewModel.navigationTitle)
             .toolbar {
-                if viewModel.screen == .home {
-                    ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    if viewModel.screen == .orders {
+                        Button("Home") {
+                            viewModel.goHome()
+                        }
+                    } else if viewModel.screen == .orderDetail {
+                        Button("Ordini") {
+                            viewModel.goOrders()
+                        }
+                    }
+                }
+
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    if viewModel.screen != .connect {
                         Button("Esci") {
                             viewModel.logout()
                         }
@@ -41,7 +65,7 @@ private struct ConnectView: View {
                     .font(.largeTitle)
                     .bold()
 
-                Text("PoC v0.2: incolla il Pair URL del modulo PrestaShop. L'app legge il pairing, fa login QR e salva la sessione.")
+                Text("PoC v0.3: pairing, sessione, home, lista ordini e dettaglio ordine.")
                     .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -115,20 +139,20 @@ private struct HomeView: View {
                 }
 
                 Button {
-                    Task { await viewModel.refreshStats() }
+                    Task { await viewModel.openOrders() }
                 } label: {
                     HStack {
-                        if viewModel.isLoading {
-                            ProgressView()
-                        }
-                        Text("Aggiorna dati")
+                        Image(systemName: "shippingbox")
+                        Text("Apri ordini recenti")
                             .bold()
                     }
                     .frame(maxWidth: .infinity)
                     .padding()
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.borderedProminent)
                 .disabled(viewModel.isLoading)
+
+                StatusBox(title: "Nota", message: "Tira verso il basso per aggiornare la Home. Questa è ancora una prova iOS, non la versione completa Android.")
             }
             .padding()
         }
@@ -136,13 +160,237 @@ private struct HomeView: View {
             await viewModel.refreshStats()
         }
     }
+}
 
-    private func formatCurrency(_ value: Double) -> String {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .currency
-        formatter.currencyCode = "EUR"
-        formatter.locale = Locale(identifier: "it_IT")
-        return formatter.string(from: NSNumber(value: value)) ?? String(format: "€ %.2f", value)
+private struct OrdersView: View {
+    @ObservedObject var viewModel: MobileBridgeViewModel
+
+    var body: some View {
+        List {
+            if viewModel.orders.isEmpty && viewModel.isLoading {
+                HStack {
+                    Spacer()
+                    ProgressView()
+                    Spacer()
+                }
+            }
+
+            if viewModel.orders.isEmpty && !viewModel.isLoading {
+                Text("Nessun ordine caricato.")
+                    .foregroundStyle(.secondary)
+            }
+
+            ForEach(viewModel.orders) { order in
+                Button {
+                    Task { await viewModel.openOrderDetail(order.idOrder) }
+                } label: {
+                    OrderRow(order: order)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .refreshable {
+            await viewModel.loadOrders(force: true)
+        }
+        .overlay {
+            if viewModel.isLoading && !viewModel.orders.isEmpty {
+                ProgressView()
+                    .padding()
+                    .background(.thinMaterial)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+            }
+        }
+        .task {
+            await viewModel.loadOrders(force: false)
+        }
+    }
+}
+
+private struct OrderRow: View {
+    let order: OrderSummary
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("#\(order.idOrder)")
+                    .font(.headline)
+                Text(order.reference)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text(formatCurrency(order.totalPaidTaxIncl, currencyCode: order.currencyIso))
+                    .font(.headline)
+            }
+
+            Text(order.customer.displayName)
+                .font(.subheadline)
+
+            HStack {
+                Text(order.currentStateName.isEmpty ? "Stato non disponibile" : order.currentStateName)
+                    .font(.caption)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(.thinMaterial)
+                    .clipShape(Capsule())
+
+                Spacer()
+
+                Text(order.dateAdd)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 6)
+    }
+}
+
+private struct OrderDetailView: View {
+    @ObservedObject var viewModel: MobileBridgeViewModel
+
+    var body: some View {
+        Group {
+            if let order = viewModel.selectedOrderInfo {
+                ScrollView {
+                    VStack(spacing: 16) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("Ordine #\(order.idOrder)")
+                                    .font(.title2)
+                                    .bold()
+                                Spacer()
+                                Text(formatCurrency(order.totals.paidTaxIncl, currencyCode: order.currencyIso))
+                                    .font(.title2)
+                                    .bold()
+                            }
+
+                            Text(order.reference)
+                                .foregroundStyle(.secondary)
+
+                            Text(order.currentStateName.isEmpty ? "Stato non disponibile" : order.currentStateName)
+                                .font(.headline)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding()
+                        .background(.thinMaterial)
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
+
+                        DetailSection(title: "Stato ordine") {
+                            HStack(alignment: .center) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(order.currentStateName.isEmpty ? "Stato non disponibile" : order.currentStateName)
+                                        .font(.headline)
+                                    Text("Stato attuale")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+
+                                Spacer()
+
+                                if viewModel.orderStatuses.isEmpty {
+                                    Button("Carica stati") {
+                                        Task { await viewModel.loadOrderStatusesIfNeeded() }
+                                    }
+                                } else {
+                                    Menu {
+                                        ForEach(viewModel.orderStatuses) { status in
+                                            Button(status.name) {
+                                                Task { await viewModel.changeSelectedOrderStatus(status.idOrderState) }
+                                            }
+                                            .disabled(status.idOrderState == order.currentState)
+                                        }
+                                    } label: {
+                                        Text(viewModel.isUpdatingOrderState ? "Aggiorno..." : "Cambia")
+                                    }
+                                    .disabled(viewModel.isUpdatingOrderState)
+                                }
+                            }
+
+                            if viewModel.isUpdatingOrderState {
+                                ProgressView()
+                            }
+                        }
+
+                        DetailSection(title: "Cliente") {
+                            DetailLine(label: "Nome", value: order.customer.displayName)
+                            DetailLine(label: "Email", value: order.customer.email)
+                        }
+
+                        DetailSection(title: "Tracciabilità") {
+                            DetailLine(label: "Corriere", value: order.carrierName.isEmpty ? "Non disponibile" : order.carrierName)
+                            DetailLine(label: "Tracking", value: order.trackingNumber.isEmpty ? "Non disponibile" : order.trackingNumber)
+                        }
+
+                        DetailSection(title: "Totali") {
+                            DetailLine(label: "Prodotti", value: formatCurrency(order.totals.productsTaxIncl, currencyCode: order.currencyIso))
+                            DetailLine(label: "Spedizione", value: formatCurrency(order.totals.shippingTaxIncl, currencyCode: order.currencyIso))
+                            DetailLine(label: "Pagato", value: formatCurrency(order.totals.paidTaxIncl, currencyCode: order.currencyIso))
+                        }
+
+                        DetailSection(title: "Indirizzo consegna") {
+                            AddressLines(address: order.deliveryAddress)
+                        }
+
+                        DetailSection(title: "Prodotti") {
+                            ForEach(order.items) { item in
+                                VStack(alignment: .leading, spacing: 4) {
+                                    HStack(alignment: .top) {
+                                        Text("\(item.productQuantity)x")
+                                            .bold()
+                                        Text(item.productName)
+                                        Spacer()
+                                        Text(formatCurrency(item.totalPriceTaxIncl, currencyCode: order.currencyIso))
+                                            .bold()
+                                    }
+
+                                    if !item.productReference.isEmpty {
+                                        Text(item.productReference)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+
+                                    if !item.productEan13.isEmpty {
+                                        Text("EAN \(item.productEan13)")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                                .padding(.vertical, 6)
+
+                                if item.id != order.items.last?.id {
+                                    Divider()
+                                }
+                            }
+                        }
+
+                        DetailSection(title: "Storico stato") {
+                            ForEach(order.history) { entry in
+                                HStack {
+                                    Text(entry.stateName)
+                                    Spacer()
+                                    Text(entry.dateAdd)
+                                        .foregroundStyle(.secondary)
+                                }
+                                .font(.subheadline)
+                                .padding(.vertical, 4)
+                            }
+                        }
+                    }
+                    .padding()
+                }
+                .refreshable {
+                    await viewModel.reloadSelectedOrder()
+                }
+            } else {
+                VStack(spacing: 12) {
+                    ProgressView()
+                    Text(viewModel.status)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .task {
+            await viewModel.loadOrderStatusesIfNeeded()
+        }
     }
 }
 
@@ -165,6 +413,62 @@ private struct MetricCard: View {
         .padding()
         .background(.thinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+}
+
+private struct DetailSection<Content: View>: View {
+    let title: String
+    let content: Content
+
+    init(title: String, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
+                .font(.headline)
+            content
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding()
+        .background(.thinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+}
+
+private struct DetailLine: View {
+    let label: String
+    let value: String
+
+    var body: some View {
+        if !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            HStack(alignment: .top) {
+                Text(label)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 90, alignment: .leading)
+                Text(value)
+                Spacer()
+            }
+        }
+    }
+}
+
+private struct AddressLines: View {
+    let address: OrderAddress
+
+    var body: some View {
+        if address.displayLines.isEmpty {
+            Text("Non disponibile")
+                .foregroundStyle(.secondary)
+        } else {
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(address.displayLines, id: \.self) { line in
+                    Text(line)
+                }
+            }
+        }
     }
 }
 
@@ -191,6 +495,8 @@ final class MobileBridgeViewModel: ObservableObject {
     enum Screen {
         case connect
         case home
+        case orders
+        case orderDetail
     }
 
     @Published var screen: Screen = .connect
@@ -199,9 +505,26 @@ final class MobileBridgeViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var session: MobileBridgeSession?
     @Published var stats: StoreStats?
+    @Published var orders: [OrderSummary] = []
+    @Published var selectedOrderInfo: OrderInfo?
+    @Published var orderStatuses: [OrderStatus] = []
+    @Published var isUpdatingOrderState = false
 
     private let api = MobileBridgeApiClient()
     private let store = SessionStore()
+
+    var navigationTitle: String {
+        switch screen {
+        case .connect:
+            return "Collega shop"
+        case .home:
+            return "Mobile Bridge"
+        case .orders:
+            return "Ordini"
+        case .orderDetail:
+            return "Dettaglio ordine"
+        }
+    }
 
     func restoreSessionIfAvailable() async {
         guard session == nil, let saved = store.load() else { return }
@@ -265,10 +588,121 @@ final class MobileBridgeViewModel: ObservableObject {
         }
     }
 
+    func openOrders() async {
+        screen = .orders
+        await loadOrders(force: orders.isEmpty)
+    }
+
+    func loadOrders(force: Bool) async {
+        guard let session else { return }
+        if !force && !orders.isEmpty { return }
+
+        isLoading = true
+        status = "Carico ordini..."
+        defer { isLoading = false }
+
+        do {
+            orders = try await api.getOrders(
+                apiUrl: session.apiUrl,
+                sessionToken: session.sessionToken,
+                limit: 30
+            )
+            status = "Ordini aggiornati."
+        } catch {
+            status = "Errore ordini: \(error.localizedDescription)"
+        }
+    }
+
+    func openOrderDetail(_ orderId: Int) async {
+        guard let session else { return }
+        selectedOrderInfo = nil
+        screen = .orderDetail
+        isLoading = true
+        status = "Carico dettaglio ordine..."
+        defer { isLoading = false }
+
+        do {
+            selectedOrderInfo = try await api.getOrderInfo(
+                apiUrl: session.apiUrl,
+                sessionToken: session.sessionToken,
+                orderId: orderId
+            )
+            status = "Dettaglio ordine caricato."
+        } catch {
+            status = "Errore dettaglio ordine: \(error.localizedDescription)"
+        }
+    }
+
+    func reloadSelectedOrder() async {
+        guard let orderId = selectedOrderInfo?.idOrder else { return }
+        await openOrderDetail(orderId)
+    }
+
+    func loadOrderStatusesIfNeeded() async {
+        guard orderStatuses.isEmpty, let session else { return }
+
+        do {
+            orderStatuses = try await api.getOrderStatuses(
+                apiUrl: session.apiUrl,
+                sessionToken: session.sessionToken
+            )
+        } catch {
+            status = "Errore stati ordine: \(error.localizedDescription)"
+        }
+    }
+
+    func changeSelectedOrderStatus(_ stateId: Int) async {
+        guard let session, let currentOrder = selectedOrderInfo else { return }
+        guard currentOrder.currentState != stateId else { return }
+
+        isUpdatingOrderState = true
+        status = "Cambio stato ordine..."
+        defer { isUpdatingOrderState = false }
+
+        do {
+            let updated = try await api.updateOrderState(
+                apiUrl: session.apiUrl,
+                sessionToken: session.sessionToken,
+                orderId: currentOrder.idOrder,
+                stateId: stateId
+            )
+
+            selectedOrderInfo = updated
+            if let index = orders.firstIndex(where: { $0.idOrder == updated.idOrder }) {
+                orders[index] = OrderSummary(
+                    idOrder: updated.idOrder,
+                    reference: updated.reference,
+                    dateAdd: updated.dateAdd,
+                    payment: updated.payment,
+                    module: updated.module,
+                    totalPaidTaxIncl: updated.totals.paidTaxIncl,
+                    totalShippingTaxIncl: updated.totals.shippingTaxIncl,
+                    currentState: updated.currentState,
+                    currentStateName: updated.currentStateName,
+                    currencyIso: updated.currencyIso,
+                    customer: updated.customer
+                )
+            }
+            status = "Stato ordine aggiornato."
+        } catch {
+            status = "Errore cambio stato: \(error.localizedDescription)"
+        }
+    }
+
+    func goHome() {
+        screen = .home
+    }
+
+    func goOrders() {
+        screen = .orders
+    }
+
     func logout() {
         store.clear()
         session = nil
         stats = nil
+        orders = []
+        selectedOrderInfo = nil
         screen = .connect
         status = "Sessione rimossa. Incolla un nuovo Pair URL."
     }

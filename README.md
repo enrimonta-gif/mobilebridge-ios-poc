@@ -1,6 +1,6 @@
-# Mobile Bridge iOS PoC v0.3
+# Mobile Bridge iOS PoC v0.4
 
-Terzo test iOS per proseguire la strada senza Mac fisico, compilando con GitHub Actions su runner macOS.
+Quarto test iOS per proseguire la strada senza Mac fisico, compilando con GitHub Actions su runner macOS.
 
 ## Cosa fa
 
@@ -20,6 +20,10 @@ Terzo test iOS per proseguire la strada senza Mac fisico, compilando con GitHub 
   - prodotti;
   - corriere/tracking se disponibili;
   - storico stati.
+- Nuova funzione v0.4:
+  - lettura stati ordine da `get_orders_statuses`;
+  - cambio stato ordine da dettaglio tramite `update_order_state`;
+  - aggiornamento del dettaglio e della lista ordini dopo il cambio stato.
 
 ## Cosa NON fa ancora
 
@@ -27,8 +31,7 @@ Terzo test iOS per proseguire la strada senza Mac fisico, compilando con GitHub 
 - Non usa TestFlight.
 - Non usa firma/certificati Apple.
 - Non ha QR scanner.
-- Non cambia ancora lo stato ordine da iOS.
-- Non modifica tracking/corriere da iOS.
+- Non modifica ancora tracking/corriere da iOS.
 - Non ha ancora clienti/prodotti/online-carrelli.
 
 ## Come provarlo su GitHub
@@ -40,4 +43,4 @@ Terzo test iOS per proseguire la strada senza Mac fisico, compilando con GitHub 
 3. Vai su Actions.
 4. Lancia `Build iOS proof of concept`.
 
-Se la build passa, il prossimo step consigliato è la v0.4 con cambio stato ordine oppure con clienti/prodotti.
+Se la build passa, il prossimo step consigliato è la v0.5 con clienti/prodotti oppure online-carrelli.

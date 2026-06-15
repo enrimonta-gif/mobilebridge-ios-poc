@@ -67,6 +67,143 @@ struct MobileBridgeSession: Codable {
     var deviceName: String
 }
 
+struct CustomerSummary: Identifiable {
+    let idCustomer: Int
+    let firstname: String
+    let lastname: String
+    let fullName: String
+    let email: String
+
+    var id: Int { idCustomer }
+
+    var displayName: String {
+        if !fullName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return fullName
+        }
+        let joined = "\(firstname) \(lastname)".trimmingCharacters(in: .whitespacesAndNewlines)
+        return joined.isEmpty ? "Cliente" : joined
+    }
+}
+
+struct OrderSummary: Identifiable {
+    let idOrder: Int
+    let reference: String
+    let dateAdd: String
+    let payment: String
+    let module: String
+    let totalPaidTaxIncl: Double
+    let totalShippingTaxIncl: Double
+    let currentState: Int
+    let currentStateName: String
+    let currencyIso: String
+    let customer: CustomerSummary
+
+    var id: Int { idOrder }
+}
+
+struct OrderTotals {
+    let productsTaxIncl: Double
+    let productsTaxExcl: Double
+    let shippingTaxIncl: Double
+    let shippingTaxExcl: Double
+    let paidTaxIncl: Double
+    let paidTaxExcl: Double
+}
+
+struct OrderAddress {
+    let fullName: String
+    let company: String
+    let address1: String
+    let address2: String
+    let postcode: String
+    let city: String
+    let stateName: String
+    let countryName: String
+    let phone: String
+    let phoneMobile: String
+
+    static let empty = OrderAddress(
+        fullName: "",
+        company: "",
+        address1: "",
+        address2: "",
+        postcode: "",
+        city: "",
+        stateName: "",
+        countryName: "",
+        phone: "",
+        phoneMobile: ""
+    )
+
+    var displayLines: [String] {
+        [
+            fullName,
+            company,
+            address1,
+            address2,
+            "\(postcode) \(city)".trimmingCharacters(in: .whitespacesAndNewlines),
+            stateName,
+            countryName,
+            phone,
+            phoneMobile
+        ].filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    }
+}
+
+struct OrderLine: Identifiable {
+    let rowId = UUID()
+    let productId: Int
+    let productAttributeId: Int
+    let productName: String
+    let productReference: String
+    let productSupplierReference: String
+    let productEan13: String
+    let productQuantity: Int
+    let unitPriceTaxIncl: Double
+    let totalPriceTaxIncl: Double
+
+    var id: UUID { rowId }
+}
+
+struct OrderHistoryEntry: Identifiable {
+    let rowId = UUID()
+    let dateAdd: String
+    let idOrderState: Int
+    let stateName: String
+
+    var id: UUID { rowId }
+}
+
+struct OrderStatus: Identifiable {
+    let idOrderState: Int
+    let name: String
+
+    var id: Int { idOrderState }
+}
+
+struct OrderInfo: Identifiable {
+    let idOrder: Int
+    let reference: String
+    let dateAdd: String
+    let payment: String
+    let module: String
+    let currentState: Int
+    let currentStateName: String
+    let currencyIso: String
+    let idCarrier: Int
+    let idOrderCarrier: Int
+    let carrierName: String
+    let trackingNumber: String
+    let totals: OrderTotals
+    let customer: CustomerSummary
+    let invoiceAddress: OrderAddress
+    let deliveryAddress: OrderAddress
+    let items: [OrderLine]
+    let history: [OrderHistoryEntry]
+
+    var id: Int { idOrder }
+}
+
 private struct PairingEnvelope: Decodable {
     let ok: Bool
     let pairing: PairingPayload
@@ -177,7 +314,7 @@ final class MobileBridgeApiClient {
                 "device_uuid": deviceUuid,
                 "device_name": deviceName,
                 "platform": "ios",
-                "app_version": "0.2"
+                "app_version": "0.3"
             ]
         )
 
@@ -234,6 +371,90 @@ final class MobileBridgeApiClient {
         )
     }
 
+    func getOrders(apiUrl: String, sessionToken: String, limit: Int = 30) async throws -> [OrderSummary] {
+        let url = try buildUrl(
+            base: apiUrl,
+            parameters: [
+                "call_function": "get_orders",
+                "session_token": sessionToken,
+                "limit": "\(limit)"
+            ]
+        )
+
+        let data = try await getData(from: url.absoluteString, sessionToken: sessionToken)
+        let json = try parseJsonDictionary(data)
+        try ensureOk(json, defaultMessage: "Ordini non disponibili")
+
+        let orders = arrayValue(json["orders"])
+        return orders.map { parseOrderSummary($0) }
+    }
+
+    func getOrderInfo(apiUrl: String, sessionToken: String, orderId: Int) async throws -> OrderInfo {
+        let url = try buildUrl(
+            base: apiUrl,
+            parameters: [
+                "call_function": "get_orders_info",
+                "session_token": sessionToken,
+                "id_order": "\(orderId)"
+            ]
+        )
+
+        let data = try await getData(from: url.absoluteString, sessionToken: sessionToken)
+        let json = try parseJsonDictionary(data)
+        try ensureOk(json, defaultMessage: "Dettaglio ordine non disponibile")
+
+        let order = dictValue(json["order"])
+        if order.isEmpty {
+            throw MobileBridgeApiError.missingData("Il modulo non ha restituito il dettaglio ordine")
+        }
+
+        return parseOrderInfo(order)
+    }
+
+    func getOrderStatuses(apiUrl: String, sessionToken: String) async throws -> [OrderStatus] {
+        let url = try buildUrl(
+            base: apiUrl,
+            parameters: [
+                "call_function": "get_orders_statuses",
+                "session_token": sessionToken
+            ]
+        )
+
+        let data = try await getData(from: url.absoluteString, sessionToken: sessionToken)
+        let json = try parseJsonDictionary(data)
+        try ensureOk(json, defaultMessage: "Stati ordine non disponibili")
+
+        return arrayValue(json["statuses"]).map { status in
+            OrderStatus(
+                idOrderState: intValue(status["id_order_state"]),
+                name: stringValue(status["name"])
+            )
+        }
+    }
+
+    func updateOrderState(apiUrl: String, sessionToken: String, orderId: Int, stateId: Int) async throws -> OrderInfo {
+        let url = try buildUrl(
+            base: apiUrl,
+            parameters: [
+                "call_function": "update_order_state",
+                "session_token": sessionToken,
+                "id_order": "\(orderId)",
+                "id_order_state": "\(stateId)"
+            ]
+        )
+
+        let data = try await getData(from: url.absoluteString, sessionToken: sessionToken)
+        let json = try parseJsonDictionary(data)
+        try ensureOk(json, defaultMessage: "Cambio stato non riuscito")
+
+        let order = dictValue(json["order"])
+        if order.isEmpty {
+            throw MobileBridgeApiError.missingData("Il modulo non ha restituito il dettaglio aggiornato")
+        }
+
+        return parseOrderInfo(order)
+    }
+
     private func getData(from urlString: String, sessionToken: String? = nil) async throws -> Data {
         guard let url = URL(string: urlString.trimmingCharacters(in: .whitespacesAndNewlines)) else {
             throw MobileBridgeApiError.invalidURL
@@ -277,10 +498,205 @@ final class MobileBridgeApiClient {
 
         return url
     }
+
+    private func parseJsonDictionary(_ data: Data) throws -> [String: Any] {
+        let json = try JSONSerialization.jsonObject(with: data, options: [])
+        guard let dict = json as? [String: Any] else {
+            throw MobileBridgeApiError.invalidResponse
+        }
+        return dict
+    }
+
+    private func ensureOk(_ json: [String: Any], defaultMessage: String) throws {
+        guard boolValue(json["ok"]) else {
+            throw MobileBridgeApiError.moduleError(stringValue(json["error"], defaultValue: defaultMessage))
+        }
+    }
+
+    private func parseOrderSummary(_ dict: [String: Any]) -> OrderSummary {
+        OrderSummary(
+            idOrder: intValue(dict["id_order"]),
+            reference: stringValue(dict["reference"]),
+            dateAdd: stringValue(dict["date_add"]),
+            payment: stringValue(dict["payment"]),
+            module: stringValue(dict["module"]),
+            totalPaidTaxIncl: doubleValue(dict["total_paid_tax_incl"]),
+            totalShippingTaxIncl: doubleValue(dict["total_shipping_tax_incl"]),
+            currentState: intValue(dict["current_state"]),
+            currentStateName: stringValue(dict["current_state_name"]),
+            currencyIso: stringValue(dict["currency_iso"], defaultValue: "EUR"),
+            customer: parseCustomer(dictValue(dict["customer"]))
+        )
+    }
+
+    private func parseOrderInfo(_ dict: [String: Any]) -> OrderInfo {
+        let totals = dictValue(dict["totals"])
+        let addresses = dictValue(dict["addresses"])
+
+        return OrderInfo(
+            idOrder: intValue(dict["id_order"]),
+            reference: stringValue(dict["reference"]),
+            dateAdd: stringValue(dict["date_add"]),
+            payment: stringValue(dict["payment"]),
+            module: stringValue(dict["module"]),
+            currentState: intValue(dict["current_state"]),
+            currentStateName: stringValue(dict["current_state_name"]),
+            currencyIso: stringValue(dict["currency_iso"], defaultValue: "EUR"),
+            idCarrier: intValue(dict["id_carrier"]),
+            idOrderCarrier: intValue(dict["id_order_carrier"]),
+            carrierName: stringValue(dict["carrier_name"]),
+            trackingNumber: stringValue(dict["tracking_number"]),
+            totals: OrderTotals(
+                productsTaxIncl: doubleValue(totals["products_tax_incl"]),
+                productsTaxExcl: doubleValue(totals["products_tax_excl"]),
+                shippingTaxIncl: doubleValue(totals["shipping_tax_incl"]),
+                shippingTaxExcl: doubleValue(totals["shipping_tax_excl"]),
+                paidTaxIncl: doubleValue(totals["paid_tax_incl"]),
+                paidTaxExcl: doubleValue(totals["paid_tax_excl"])
+            ),
+            customer: parseCustomer(dictValue(dict["customer"])),
+            invoiceAddress: parseAddress(dictValue(addresses["invoice"])),
+            deliveryAddress: parseAddress(dictValue(addresses["delivery"])),
+            items: arrayValue(dict["items"]).map { parseOrderLine($0) },
+            history: arrayValue(dict["history"]).map { parseHistoryEntry($0) }
+        )
+    }
+
+    private func parseCustomer(_ dict: [String: Any]) -> CustomerSummary {
+        CustomerSummary(
+            idCustomer: intValue(dict["id_customer"]),
+            firstname: stringValue(dict["firstname"]),
+            lastname: stringValue(dict["lastname"]),
+            fullName: stringValue(dict["full_name"]),
+            email: stringValue(dict["email"])
+        )
+    }
+
+    private func parseAddress(_ dict: [String: Any]) -> OrderAddress {
+        if dict.isEmpty {
+            return .empty
+        }
+
+        return OrderAddress(
+            fullName: stringValue(dict["full_name"]),
+            company: stringValue(dict["company"]),
+            address1: stringValue(dict["address1"]),
+            address2: stringValue(dict["address2"]),
+            postcode: stringValue(dict["postcode"]),
+            city: stringValue(dict["city"]),
+            stateName: stringValue(dict["state_name"]),
+            countryName: stringValue(dict["country_name"]),
+            phone: stringValue(dict["phone"]),
+            phoneMobile: stringValue(dict["phone_mobile"])
+        )
+    }
+
+    private func parseOrderLine(_ dict: [String: Any]) -> OrderLine {
+        OrderLine(
+            productId: intValue(dict["product_id"]),
+            productAttributeId: intValue(dict["product_attribute_id"]),
+            productName: stringValue(dict["product_name"]),
+            productReference: stringValue(dict["product_reference"]),
+            productSupplierReference: stringValue(dict["product_supplier_reference"]),
+            productEan13: stringValue(dict["product_ean13"]),
+            productQuantity: intValue(dict["product_quantity"]),
+            unitPriceTaxIncl: doubleValue(dict["unit_price_tax_incl"]),
+            totalPriceTaxIncl: doubleValue(dict["total_price_tax_incl"])
+        )
+    }
+
+    private func parseHistoryEntry(_ dict: [String: Any]) -> OrderHistoryEntry {
+        OrderHistoryEntry(
+            dateAdd: stringValue(dict["date_add"]),
+            idOrderState: intValue(dict["id_order_state"]),
+            stateName: stringValue(dict["state_name"])
+        )
+    }
+
+    private func dictValue(_ value: Any?) -> [String: Any] {
+        if let dict = value as? [String: Any] {
+            return dict
+        }
+        if let dict = value as? NSDictionary {
+            var result: [String: Any] = [:]
+            dict.forEach { key, value in
+                if let key = key as? String {
+                    result[key] = value
+                }
+            }
+            return result
+        }
+        return [:]
+    }
+
+    private func arrayValue(_ value: Any?) -> [[String: Any]] {
+        if let array = value as? [[String: Any]] {
+            return array
+        }
+        if let array = value as? [Any] {
+            return array.compactMap { $0 as? [String: Any] }
+        }
+        return []
+    }
+
+    private func stringValue(_ value: Any?, defaultValue: String = "") -> String {
+        if let string = value as? String {
+            return string
+        }
+        if let number = value as? NSNumber {
+            return number.stringValue
+        }
+        return defaultValue
+    }
+
+    private func intValue(_ value: Any?, defaultValue: Int = 0) -> Int {
+        if let int = value as? Int {
+            return int
+        }
+        if let number = value as? NSNumber {
+            return number.intValue
+        }
+        if let string = value as? String, let int = Int(string) {
+            return int
+        }
+        return defaultValue
+    }
+
+    private func doubleValue(_ value: Any?, defaultValue: Double = 0) -> Double {
+        if let double = value as? Double {
+            return double
+        }
+        if let int = value as? Int {
+            return Double(int)
+        }
+        if let number = value as? NSNumber {
+            return number.doubleValue
+        }
+        if let string = value as? String {
+            let normalized = string.replacingOccurrences(of: ",", with: ".")
+            if let double = Double(normalized) {
+                return double
+            }
+        }
+        return defaultValue
+    }
+
+    private func boolValue(_ value: Any?) -> Bool {
+        if let bool = value as? Bool {
+            return bool
+        }
+        if let number = value as? NSNumber {
+            return number.boolValue
+        }
+        if let string = value as? String {
+            return ["1", "true", "yes", "ok"].contains(string.lowercased())
+        }
+        return false
+    }
 }
 
 final class SessionStore {
-    private let key = "mobilebridge_ios_session_v0_2"
+    private let key = "mobilebridge_ios_session_v0_3"
 
     func load() -> MobileBridgeSession? {
         guard let data = UserDefaults.standard.data(forKey: key) else { return nil }
