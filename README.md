@@ -1,6 +1,6 @@
-# Mobile Bridge iOS PoC v0.9
+# Mobile Bridge iOS PoC v0.10
 
-Nono test iOS, sempre senza Mac fisico, compilando con GitHub Actions su runner macOS.
+Decimo test iOS, sempre senza Mac fisico, compilando con GitHub Actions su runner macOS.
 
 ## Cosa fa
 
@@ -10,17 +10,14 @@ Nono test iOS, sempre senza Mac fisico, compilando con GitHub Actions su runner 
 - Ordini, dettaglio ordine e cambio stato ordine.
 - Clienti.
 - Prodotti.
+- Dettaglio/modifica prodotto.
 - Online/carrelli.
 - Corriere/tracking modificabili.
 - Scanner barcode tracking.
-- Nuova funzione v0.9:
-  - apertura dettaglio prodotto dalla lista prodotti;
-  - lettura dettaglio da `get_product_info`;
-  - prezzo IVA incluso modificabile;
-  - quantità modificabile;
-  - attivo/non attivo modificabile;
-  - supporto base per combinazioni;
-  - salvataggio tramite `update_product`.
+- Nuova funzione v0.10:
+  - icona Mobile Bridge integrata in `Assets.xcassets`;
+  - `ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon`;
+  - workflow GitHub che carica anche l’artifact `ios-simulator-app`.
 
 ## Cosa NON fa ancora
 
@@ -28,7 +25,6 @@ Nono test iOS, sempre senza Mac fisico, compilando con GitHub Actions su runner 
 - Non usa TestFlight.
 - Non usa firma/certificati Apple.
 - Non ha notifiche push iOS.
-- Il salvataggio prodotti è volutamente minimale: prezzo, quantità e stato attivo.
 
 ## Come provarlo su GitHub
 
@@ -39,4 +35,4 @@ Nono test iOS, sempre senza Mac fisico, compilando con GitHub Actions su runner 
 3. Vai su Actions.
 4. Lancia `Build iOS proof of concept`.
 
-Se la build passa, l’app iOS PoC ha ormai quasi tutte le sezioni operative principali.
+Se la build passa, il passo successivo vero è preparare la strada TestFlight/firma Apple.
