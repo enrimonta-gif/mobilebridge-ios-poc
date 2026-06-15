@@ -523,8 +523,57 @@ private struct OrderDetailView: View {
                         }
 
                         DetailSection(title: "Tracciabilità") {
-                            DetailLine(label: "Corriere", value: order.carrierName.isEmpty ? "Non disponibile" : order.carrierName)
-                            DetailLine(label: "Tracking", value: order.trackingNumber.isEmpty ? "Non disponibile" : order.trackingNumber)
+                            VStack(alignment: .leading, spacing: 10) {
+                                HStack {
+                                    Text("Corriere")
+                                        .foregroundStyle(.secondary)
+                                        .frame(width: 90, alignment: .leading)
+
+                                    if viewModel.carriers.isEmpty {
+                                        Button(order.carrierName.isEmpty ? "Carica corrieri" : order.carrierName) {
+                                            Task { await viewModel.loadCarriersIfNeeded() }
+                                        }
+                                    } else {
+                                        Menu {
+                                            ForEach(viewModel.carriers) { carrier in
+                                                Button(carrier.name) {
+                                                    viewModel.selectedCarrierId = carrier.idCarrier
+                                                }
+                                            }
+                                        } label: {
+                                            Text(viewModel.selectedCarrierName(fallback: order.carrierName))
+                                        }
+                                    }
+
+                                    Spacer()
+                                }
+
+                                HStack(alignment: .center) {
+                                    Text("Tracking")
+                                        .foregroundStyle(.secondary)
+                                        .frame(width: 90, alignment: .leading)
+
+                                    TextField("Numero tracking", text: $viewModel.trackingDraft)
+                                        .textInputAutocapitalization(.characters)
+                                        .autocorrectionDisabled()
+                                        .textFieldStyle(.roundedBorder)
+                                }
+
+                                Button {
+                                    Task { await viewModel.saveTracking() }
+                                } label: {
+                                    HStack {
+                                        if viewModel.isSavingTracking {
+                                            ProgressView()
+                                        }
+                                        Text("Salva corriere/tracking")
+                                            .bold()
+                                    }
+                                    .frame(maxWidth: .infinity)
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .disabled(viewModel.isSavingTracking)
+                            }
                         }
 
                         DetailSection(title: "Totali") {
@@ -597,6 +646,7 @@ private struct OrderDetailView: View {
         }
         .task {
             await viewModel.loadOrderStatusesIfNeeded()
+            await viewModel.loadCarriersIfNeeded()
         }
     }
 }
@@ -787,6 +837,10 @@ final class MobileBridgeViewModel: ObservableObject {
     @Published var selectedOrderInfo: OrderInfo?
     @Published var orderStatuses: [OrderStatus] = []
     @Published var isUpdatingOrderState = false
+    @Published var carriers: [CarrierSummary] = []
+    @Published var selectedCarrierId: Int = 0
+    @Published var trackingDraft: String = ""
+    @Published var isSavingTracking = false
     @Published var customers: [CustomerListItem] = []
     @Published var products: [ProductSummary] = []
     @Published var liveActivity: LiveActivityResponse?
@@ -911,11 +965,13 @@ final class MobileBridgeViewModel: ObservableObject {
         defer { isLoading = false }
 
         do {
-            selectedOrderInfo = try await api.getOrderInfo(
+            let info = try await api.getOrderInfo(
                 apiUrl: session.apiUrl,
                 sessionToken: session.sessionToken,
                 orderId: orderId
             )
+            selectedOrderInfo = info
+            syncTrackingDraft(from: info)
             status = "Dettaglio ordine caricato."
         } catch {
             status = "Errore dettaglio ordine: \(error.localizedDescription)"
@@ -957,24 +1013,90 @@ final class MobileBridgeViewModel: ObservableObject {
             )
 
             selectedOrderInfo = updated
-            if let index = orders.firstIndex(where: { $0.idOrder == updated.idOrder }) {
-                orders[index] = OrderSummary(
-                    idOrder: updated.idOrder,
-                    reference: updated.reference,
-                    dateAdd: updated.dateAdd,
-                    payment: updated.payment,
-                    module: updated.module,
-                    totalPaidTaxIncl: updated.totals.paidTaxIncl,
-                    totalShippingTaxIncl: updated.totals.shippingTaxIncl,
-                    currentState: updated.currentState,
-                    currentStateName: updated.currentStateName,
-                    currencyIso: updated.currencyIso,
-                    customer: updated.customer
-                )
-            }
+            syncTrackingDraft(from: updated)
+            updateOrderSummaryFromInfo(updated)
             status = "Stato ordine aggiornato."
         } catch {
             status = "Errore cambio stato: \(error.localizedDescription)"
+        }
+    }
+
+    func loadCarriersIfNeeded() async {
+        guard carriers.isEmpty, let session else { return }
+
+        do {
+            carriers = try await api.getCarriers(
+                apiUrl: session.apiUrl,
+                sessionToken: session.sessionToken
+            )
+        } catch {
+            status = "Errore corrieri: \(error.localizedDescription)"
+        }
+    }
+
+    func selectedCarrierName(fallback: String) -> String {
+        if let carrier = carriers.first(where: { $0.idCarrier == selectedCarrierId }) {
+            return carrier.name
+        }
+
+        if !fallback.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return fallback
+        }
+
+        return "Seleziona"
+    }
+
+    func saveTracking() async {
+        guard let session, let currentOrder = selectedOrderInfo else { return }
+
+        let carrierId = selectedCarrierId > 0 ? selectedCarrierId : currentOrder.idCarrier
+        guard carrierId > 0 else {
+            status = "Seleziona un corriere prima di salvare."
+            return
+        }
+
+        isSavingTracking = true
+        status = "Salvo tracking..."
+        defer { isSavingTracking = false }
+
+        do {
+            let updated = try await api.updateOrderTracking(
+                apiUrl: session.apiUrl,
+                sessionToken: session.sessionToken,
+                orderId: currentOrder.idOrder,
+                carrierId: carrierId,
+                trackingNumber: trackingDraft
+            )
+
+            selectedOrderInfo = updated
+            syncTrackingDraft(from: updated)
+            updateOrderSummaryFromInfo(updated)
+            status = "Corriere/tracking salvati."
+        } catch {
+            status = "Errore tracking: \(error.localizedDescription)"
+        }
+    }
+
+    private func syncTrackingDraft(from order: OrderInfo) {
+        selectedCarrierId = order.idCarrier
+        trackingDraft = order.trackingNumber
+    }
+
+    private func updateOrderSummaryFromInfo(_ updated: OrderInfo) {
+        if let index = orders.firstIndex(where: { $0.idOrder == updated.idOrder }) {
+            orders[index] = OrderSummary(
+                idOrder: updated.idOrder,
+                reference: updated.reference,
+                dateAdd: updated.dateAdd,
+                payment: updated.payment,
+                module: updated.module,
+                totalPaidTaxIncl: updated.totals.paidTaxIncl,
+                totalShippingTaxIncl: updated.totals.shippingTaxIncl,
+                currentState: updated.currentState,
+                currentStateName: updated.currentStateName,
+                currencyIso: updated.currencyIso,
+                customer: updated.customer
+            )
         }
     }
 
@@ -1069,6 +1191,9 @@ final class MobileBridgeViewModel: ObservableObject {
         orders = []
         selectedOrderInfo = nil
         orderStatuses = []
+        carriers = []
+        selectedCarrierId = 0
+        trackingDraft = ""
         customers = []
         products = []
         liveActivity = nil

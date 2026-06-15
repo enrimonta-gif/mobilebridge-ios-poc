@@ -181,6 +181,13 @@ struct OrderStatus: Identifiable {
     var id: Int { idOrderState }
 }
 
+struct CarrierSummary: Identifiable {
+    let idCarrier: Int
+    let name: String
+
+    var id: Int { idCarrier }
+}
+
 struct OrderInfo: Identifiable {
     let idOrder: Int
     let reference: String
@@ -527,6 +534,46 @@ final class MobileBridgeApiClient {
         return parseOrderInfo(order)
     }
 
+    func getCarriers(apiUrl: String, sessionToken: String) async throws -> [CarrierSummary] {
+        let url = try buildUrl(
+            base: apiUrl,
+            parameters: [
+                "call_function": "get_carriers",
+                "session_token": sessionToken
+            ]
+        )
+
+        let data = try await getData(from: url.absoluteString, sessionToken: sessionToken)
+        let json = try parseJsonDictionary(data)
+        try ensureOk(json, defaultMessage: "Corrieri non disponibili")
+
+        return arrayValue(json["carriers"]).map { parseCarrier($0) }
+    }
+
+    func updateOrderTracking(apiUrl: String, sessionToken: String, orderId: Int, carrierId: Int, trackingNumber: String) async throws -> OrderInfo {
+        let url = try buildUrl(
+            base: apiUrl,
+            parameters: [
+                "call_function": "update_order_tracking",
+                "session_token": sessionToken,
+                "id_order": "\(orderId)",
+                "id_carrier": "\(carrierId)",
+                "tracking_number": trackingNumber
+            ]
+        )
+
+        let data = try await getData(from: url.absoluteString, sessionToken: sessionToken)
+        let json = try parseJsonDictionary(data)
+        try ensureOk(json, defaultMessage: "Salvataggio tracking non riuscito")
+
+        let order = dictValue(json["order"])
+        if order.isEmpty {
+            throw MobileBridgeApiError.missingData("Il modulo non ha restituito il dettaglio aggiornato")
+        }
+
+        return parseOrderInfo(order)
+    }
+
     func getCustomers(apiUrl: String, sessionToken: String, limit: Int = 50, offset: Int = 0, search: String = "") async throws -> [CustomerListItem] {
         var parameters: [String: String] = [
             "call_function": "get_customers",
@@ -696,6 +743,13 @@ final class MobileBridgeApiClient {
             deliveryAddress: parseAddress(dictValue(addresses["delivery"])),
             items: arrayValue(dict["items"]).map { parseOrderLine($0) },
             history: arrayValue(dict["history"]).map { parseHistoryEntry($0) }
+        )
+    }
+
+    private func parseCarrier(_ dict: [String: Any]) -> CarrierSummary {
+        CarrierSummary(
+            idCarrier: intValue(dict["id_carrier"]),
+            name: stringValue(dict["name"])
         )
     }
 

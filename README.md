@@ -1,6 +1,6 @@
-# Mobile Bridge iOS PoC v0.5
+# Mobile Bridge iOS PoC v0.6
 
-Quinto test iOS, sempre senza Mac fisico, compilando con GitHub Actions su runner macOS.
+Sesto test iOS, sempre senza Mac fisico, compilando con GitHub Actions su runner macOS.
 
 ## Cosa fa
 
@@ -8,18 +8,15 @@ Quinto test iOS, sempre senza Mac fisico, compilando con GitHub Actions su runne
 - Login QR.
 - Salvataggio sessione in UserDefaults.
 - Recupero sessione al riavvio.
-- Home minimale con statistiche di oggi.
-- Pull-to-refresh.
-- Ordini recenti.
-- Dettaglio ordine.
-- Cambio stato ordine.
-- Nuove funzioni v0.5:
-  - lista clienti da `get_customers`;
-  - ricerca clienti;
-  - lista prodotti da `get_products`;
-  - ricerca prodotti / EAN;
-  - immagini prodotto se disponibili;
-  - sezione online/carrelli da `get_live_activity`.
+- Home minimale.
+- Ordini, dettaglio ordine e cambio stato ordine.
+- Clienti.
+- Prodotti.
+- Online/carrelli.
+- Nuova funzione v0.6:
+  - lettura corrieri da `get_carriers`;
+  - modifica corriere/tracking dal dettaglio ordine;
+  - salvataggio tramite `update_order_tracking`.
 
 ## Cosa NON fa ancora
 
@@ -27,9 +24,9 @@ Quinto test iOS, sempre senza Mac fisico, compilando con GitHub Actions su runne
 - Non usa TestFlight.
 - Non usa firma/certificati Apple.
 - Non ha QR scanner.
+- Non ha ancora scanner barcode iOS per tracking.
 - Non modifica ancora prodotti da iOS.
-- Non modifica ancora tracking/corriere da iOS.
-- Non ha ancora notifiche push iOS.
+- Non ha notifiche push iOS.
 
 ## Come provarlo su GitHub
 
@@ -40,4 +37,4 @@ Quinto test iOS, sempre senza Mac fisico, compilando con GitHub Actions su runne
 3. Vai su Actions.
 4. Lancia `Build iOS proof of concept`.
 
-Se la build passa, il prossimo step consigliato è una v0.6 più operativa: dettaglio/modifica prodotto oppure tracking ordine.
+Se la build passa, il prossimo step può essere scanner barcode tracking o dettaglio/modifica prodotto.
