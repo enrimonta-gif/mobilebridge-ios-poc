@@ -90,6 +90,19 @@ private struct ConnectView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 14))
 
             Button {
+                viewModel.isPairingScannerPresented = true
+            } label: {
+                HStack {
+                    Image(systemName: "qrcode.viewfinder")
+                    Text("Scansiona QR del modulo")
+                        .bold()
+                }
+                .frame(maxWidth: .infinity)
+                .padding()
+            }
+            .buttonStyle(.bordered)
+
+            Button {
                 Task { await viewModel.connect() }
             } label: {
                 HStack {
@@ -110,6 +123,21 @@ private struct ConnectView: View {
             Spacer()
         }
         .padding()
+        .sheet(isPresented: $viewModel.isPairingScannerPresented) {
+            BarcodeScannerView(
+                guideText: "Inquadra il QR del modulo Mobile Bridge",
+                onCode: { code in
+                    viewModel.pairUrl = code
+                    viewModel.isPairingScannerPresented = false
+                    viewModel.status = "QR pairing letto. Collegamento in corso..."
+                    Task { await viewModel.connect() }
+                },
+                onCancel: {
+                    viewModel.isPairingScannerPresented = false
+                }
+            )
+            .ignoresSafeArea()
+        }
     }
 }
 
@@ -663,6 +691,7 @@ private struct OrderDetailView: View {
         }
         .sheet(isPresented: $viewModel.isTrackingScannerPresented) {
             BarcodeScannerView(
+                guideText: "Inquadra il barcode dell’etichetta",
                 onCode: { code in
                     viewModel.trackingDraft = code
                     viewModel.isTrackingScannerPresented = false
@@ -842,11 +871,13 @@ private struct StatusBox: View {
 }
 
 private struct BarcodeScannerView: UIViewControllerRepresentable {
+    let guideText: String
     let onCode: (String) -> Void
     let onCancel: () -> Void
 
     func makeUIViewController(context: Context) -> BarcodeScannerViewController {
         let controller = BarcodeScannerViewController()
+        controller.guideText = guideText
         controller.onCode = onCode
         controller.onCancel = onCancel
         return controller
@@ -857,6 +888,7 @@ private struct BarcodeScannerView: UIViewControllerRepresentable {
 }
 
 final class BarcodeScannerViewController: UIViewController, AVCaptureMetadataOutputObjectsDelegate {
+    var guideText: String = "Inquadra il codice"
     var onCode: ((String) -> Void)?
     var onCancel: (() -> Void)?
 
@@ -937,7 +969,7 @@ final class BarcodeScannerViewController: UIViewController, AVCaptureMetadataOut
         view.addSubview(closeButton)
 
         let guide = UILabel()
-        guide.text = "Inquadra il barcode dell’etichetta"
+        guide.text = guideText
         guide.textColor = .white
         guide.textAlignment = .center
         guide.font = UIFont.preferredFont(forTextStyle: .headline)
@@ -1015,6 +1047,7 @@ final class MobileBridgeViewModel: ObservableObject {
 
     @Published var screen: Screen = .connect
     @Published var pairUrl: String = ""
+    @Published var isPairingScannerPresented = false
     @Published var status: String = "Incolla il Pair URL del modulo e premi Collega."
     @Published var isLoading = false
     @Published var session: MobileBridgeSession?
@@ -1385,6 +1418,7 @@ final class MobileBridgeViewModel: ObservableObject {
         customers = []
         products = []
         liveActivity = nil
+        isPairingScannerPresented = false
         screen = .connect
         status = "Sessione rimossa. Incolla un nuovo Pair URL."
     }
