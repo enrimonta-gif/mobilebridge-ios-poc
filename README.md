@@ -1,19 +1,39 @@
-# Mobile Bridge iOS PoC v0.1
+# Mobile Bridge iOS PoC v0.2
 
-Primo test iOS per verificare la strada senza Mac fisico, usando GitHub Actions su runner macOS.
+Secondo test iOS senza Mac fisico, usando GitHub Actions su runner macOS.
 
 ## Cosa fa
 
-- App SwiftUI minimale.
+- App SwiftUI minimale ma già con flusso più simile ad Android.
 - Campo Pair URL.
-- Chiamata HTTP al Pair URL del modulo `mobilebridge`.
-- Build iOS Simulator senza firma.
+- Lettura del payload `pairing` dal modulo PrestaShop.
+- Login QR verso endpoint `call_function=login`.
+- Salvataggio sessione in `UserDefaults`.
+- Recupero sessione al riavvio.
+- Home minimale.
+- Chiamata dashboard `get_store_stats` con periodo `today`.
+- Pull-to-refresh nella Home.
 
-## Come provarlo
+## Cosa NON fa ancora
 
-1. Crea un repo vuoto, ad esempio `mobilebridge-ios-poc`.
-2. Carica il contenuto di questo ZIP nella root.
-3. Se `.github` non compare, crea manualmente `.github/workflows/ios-build.yml` e incolla `_COPY_THIS_TO_GITHUB_WORKFLOW_ios-build.yml`.
-4. Vai su Actions e lancia `Build iOS proof of concept`.
+- Non ha ancora QR scanner.
+- Non installa su iPhone reale.
+- Non usa TestFlight.
+- Non ha ancora lista ordini/dettaglio ordine.
+- Non ha push notification.
 
-Se la build passa, abbiamo confermato che GitHub/macOS compila il progetto iOS.
+## Come provarlo su GitHub
+
+1. Usa il repository già creato per il PoC iOS, oppure creane uno nuovo privato.
+2. Carica il contenuto di questo ZIP nella root del repo.
+3. Se la cartella `.github` non compare, crea manualmente:
+   `.github/workflows/ios-build.yml`
+   e incolla il contenuto di `_COPY_THIS_TO_GITHUB_WORKFLOW_ios-build.yml`.
+4. Vai su Actions.
+5. Lancia `Build iOS proof of concept`.
+
+Se la build passa anche qui, il prossimo step sarà la lista ordini.
+
+## Nota importante
+
+Questa build è per iOS Simulator e non è firmata. Serve solo a confermare che il codice SwiftUI compila. Per installarla su iPhone reale serviranno Apple Developer, firma e TestFlight.
