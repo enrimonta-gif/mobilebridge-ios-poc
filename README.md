@@ -1,34 +1,34 @@
-# Mobile Bridge iOS PoC v0.8
+# Mobile Bridge iOS PoC v0.9
 
-Ottavo test iOS, sempre senza Mac fisico, compilando con GitHub Actions su runner macOS.
+Nono test iOS, sempre senza Mac fisico, compilando con GitHub Actions su runner macOS.
 
 ## Cosa fa
 
-- Pair URL dal modulo `mobilebridge`.
-- Login QR.
-- Salvataggio sessione in UserDefaults.
-- Recupero sessione al riavvio.
-- Home minimale.
+- Pair URL manuale e QR scanner pairing.
+- Login/sessione.
+- Home.
 - Ordini, dettaglio ordine e cambio stato ordine.
 - Clienti.
 - Prodotti.
 - Online/carrelli.
 - Corriere/tracking modificabili.
 - Scanner barcode tracking.
-- Nuova funzione v0.8:
-  - scanner QR per il pairing;
-  - pulsante “Scansiona QR del modulo” nella schermata di collegamento;
-  - lettura QR con AVFoundation;
-  - compilazione automatica del Pair URL;
-  - collegamento automatico dopo la scansione.
+- Nuova funzione v0.9:
+  - apertura dettaglio prodotto dalla lista prodotti;
+  - lettura dettaglio da `get_product_info`;
+  - prezzo IVA incluso modificabile;
+  - quantità modificabile;
+  - attivo/non attivo modificabile;
+  - supporto base per combinazioni;
+  - salvataggio tramite `update_product`.
 
 ## Cosa NON fa ancora
 
 - Non installa su iPhone reale.
 - Non usa TestFlight.
 - Non usa firma/certificati Apple.
-- Non modifica ancora prodotti da iOS.
 - Non ha notifiche push iOS.
+- Il salvataggio prodotti è volutamente minimale: prezzo, quantità e stato attivo.
 
 ## Come provarlo su GitHub
 
@@ -39,4 +39,4 @@ Ottavo test iOS, sempre senza Mac fisico, compilando con GitHub Actions su runne
 3. Vai su Actions.
 4. Lancia `Build iOS proof of concept`.
 
-Se la build passa, il prossimo step può essere dettaglio/modifica prodotto.
+Se la build passa, l’app iOS PoC ha ormai quasi tutte le sezioni operative principali.

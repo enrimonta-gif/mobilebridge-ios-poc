@@ -29,6 +29,8 @@ struct ContentView: View {
                     CustomersView(viewModel: viewModel)
                 case .products:
                     ProductsView(viewModel: viewModel)
+                case .productDetail:
+                    ProductDetailView(viewModel: viewModel)
                 case .liveActivity:
                     LiveActivityView(viewModel: viewModel)
                 }
@@ -46,6 +48,10 @@ struct ContentView: View {
                     } else if viewModel.screen == .orderDetail {
                         Button("Ordini") {
                             viewModel.goOrders()
+                        }
+                    } else if viewModel.screen == .productDetail {
+                        Button("Prodotti") {
+                            viewModel.goProducts()
                         }
                     }
                 }
@@ -312,40 +318,45 @@ private struct ProductsView: View {
             LoadingOrEmptySection(isLoading: viewModel.isLoading, isEmpty: viewModel.products.isEmpty, emptyText: "Nessun prodotto caricato.")
 
             ForEach(viewModel.products) { product in
-                HStack(alignment: .top, spacing: 12) {
-                    ProductThumb(urlString: product.imageUrl)
+                Button {
+                    Task { await viewModel.openProductDetail(product.idProduct) }
+                } label: {
+                    HStack(alignment: .top, spacing: 12) {
+                        ProductThumb(urlString: product.imageUrl)
 
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack(alignment: .firstTextBaseline) {
-                            Text(product.name.isEmpty ? "Prodotto" : product.name)
-                                .font(.headline)
-                                .lineLimit(2)
-                            Spacer()
-                            Text(formatCurrency(product.priceTaxIncl))
-                                .font(.headline)
-                        }
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack(alignment: .firstTextBaseline) {
+                                Text(product.name.isEmpty ? "Prodotto" : product.name)
+                                    .font(.headline)
+                                    .lineLimit(2)
+                                Spacer()
+                                Text(formatCurrency(product.priceTaxIncl))
+                                    .font(.headline)
+                            }
 
-                        if !product.reference.isEmpty {
-                            Text(product.reference)
-                                .foregroundStyle(.secondary)
-                        }
+                            if !product.reference.isEmpty {
+                                Text(product.reference)
+                                    .foregroundStyle(.secondary)
+                            }
 
-                        HStack {
-                            Text("Qty \(product.quantity)")
-                            Spacer()
-                            Text(product.active ? "Attivo" : "Non attivo")
-                        }
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                            HStack {
+                                Text("Qty \(product.quantity)")
+                                Spacer()
+                                Text(product.active ? "Attivo" : "Non attivo")
+                            }
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
 
-                        if !product.ean13.isEmpty {
-                            Text("EAN \(product.ean13)")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                            if !product.ean13.isEmpty {
+                                Text("EAN \(product.ean13)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                     }
+                    .padding(.vertical, 6)
                 }
-                .padding(.vertical, 6)
+                .buttonStyle(.plain)
             }
         }
         .refreshable {
@@ -356,6 +367,215 @@ private struct ProductsView: View {
         }
     }
 }
+
+
+private struct ProductDetailView: View {
+    @ObservedObject var viewModel: MobileBridgeViewModel
+
+    var body: some View {
+        Group {
+            if let product = viewModel.selectedProductDetail {
+                ScrollView {
+                    VStack(spacing: 16) {
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack(alignment: .top, spacing: 14) {
+                                ProductThumbLarge(urlString: product.imageUrl)
+
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text(product.name.isEmpty ? "Prodotto" : product.name)
+                                        .font(.title2)
+                                        .bold()
+
+                                    if !product.reference.isEmpty {
+                                        Text(product.reference)
+                                            .foregroundStyle(.secondary)
+                                    }
+
+                                    if !product.manufacturerName.isEmpty {
+                                        Text(product.manufacturerName)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+
+                                Spacer()
+                            }
+
+                            HStack {
+                                Text(product.active ? "Attivo" : "Non attivo")
+                                    .font(.caption)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(.thinMaterial)
+                                    .clipShape(Capsule())
+
+                                if product.hasCombinations {
+                                    Text("\(product.combinations.count) combinazioni")
+                                        .font(.caption)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .background(.thinMaterial)
+                                        .clipShape(Capsule())
+                                }
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding()
+                        .background(.thinMaterial)
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
+
+                        DetailSection(title: "Modifica veloce") {
+                            if product.hasCombinations && !product.combinations.isEmpty {
+                                HStack {
+                                    Text("Combinazione")
+                                        .foregroundStyle(.secondary)
+                                        .frame(width: 110, alignment: .leading)
+
+                                    Menu {
+                                        Button("Prodotto base") {
+                                            viewModel.selectProductAttribute(0)
+                                        }
+
+                                        ForEach(product.combinations) { combination in
+                                            Button(combination.name.isEmpty ? "#\(combination.idProductAttribute)" : combination.name) {
+                                                viewModel.selectProductAttribute(combination.idProductAttribute)
+                                            }
+                                        }
+                                    } label: {
+                                        Text(viewModel.selectedProductCombinationName())
+                                            .lineLimit(1)
+                                    }
+
+                                    Spacer()
+                                }
+                            }
+
+                            HStack(alignment: .center) {
+                                Text("Prezzo IVA")
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 110, alignment: .leading)
+
+                                TextField("Prezzo IVA incl.", text: $viewModel.productPriceDraft)
+                                    .keyboardType(.decimalPad)
+                                    .textFieldStyle(.roundedBorder)
+                            }
+
+                            HStack(alignment: .center) {
+                                Text("Quantità")
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 110, alignment: .leading)
+
+                                TextField("Quantità", text: $viewModel.productQuantityDraft)
+                                    .keyboardType(.numberPad)
+                                    .textFieldStyle(.roundedBorder)
+                            }
+
+                            Toggle("Prodotto attivo", isOn: $viewModel.productActiveDraft)
+
+                            Button {
+                                Task { await viewModel.saveProduct() }
+                            } label: {
+                                HStack {
+                                    if viewModel.isSavingProduct {
+                                        ProgressView()
+                                    }
+                                    Text("Salva prodotto")
+                                        .bold()
+                                }
+                                .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(viewModel.isSavingProduct)
+                        }
+
+                        DetailSection(title: "Dati prodotto") {
+                            DetailLine(label: "ID", value: "\(product.idProduct)")
+                            DetailLine(label: "EAN", value: product.ean13)
+                            DetailLine(label: "UPC", value: product.upc)
+                            DetailLine(label: "Rif.", value: product.reference)
+                            DetailLine(label: "Rif. forn.", value: product.supplierReference)
+                            DetailLine(label: "Prezzo", value: formatCurrency(product.priceTaxIncl))
+                            DetailLine(label: "Quantità", value: "\(product.quantity)")
+                        }
+
+                        if !product.descriptionShort.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            DetailSection(title: "Descrizione breve") {
+                                Text(product.descriptionShort)
+                                    .font(.subheadline)
+                            }
+                        }
+
+                        if !product.combinations.isEmpty {
+                            DetailSection(title: "Combinazioni") {
+                                ForEach(product.combinations) { combination in
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        HStack {
+                                            Text(combination.name.isEmpty ? "#\(combination.idProductAttribute)" : combination.name)
+                                                .bold()
+                                            Spacer()
+                                            Text("Qty \(combination.quantity)")
+                                        }
+
+                                        if !combination.reference.isEmpty {
+                                            Text(combination.reference)
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                        }
+
+                                        Text(formatCurrency(combination.priceTaxIncl))
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    .padding(.vertical, 6)
+
+                                    if combination.id != product.combinations.last?.id {
+                                        Divider()
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .padding()
+                }
+                .refreshable {
+                    await viewModel.reloadSelectedProduct()
+                }
+            } else {
+                VStack(spacing: 12) {
+                    ProgressView()
+                    Text(viewModel.status)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+}
+
+private struct ProductThumbLarge: View {
+    let urlString: String
+
+    var body: some View {
+        if !urlString.isEmpty, let url = URL(string: urlString) {
+            AsyncImage(url: url) { image in
+                image
+                    .resizable()
+                    .scaledToFill()
+            } placeholder: {
+                Image(systemName: "photo")
+                    .font(.largeTitle)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(width: 96, height: 96)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+        } else {
+            Image(systemName: "cube.box")
+                .font(.largeTitle)
+                .frame(width: 96, height: 96)
+                .background(.thinMaterial)
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+        }
+    }
+}
+
 
 private struct LiveActivityView: View {
     @ObservedObject var viewModel: MobileBridgeViewModel
@@ -1042,6 +1262,7 @@ final class MobileBridgeViewModel: ObservableObject {
         case orderDetail
         case customers
         case products
+        case productDetail
         case liveActivity
     }
 
@@ -1063,6 +1284,12 @@ final class MobileBridgeViewModel: ObservableObject {
     @Published var isTrackingScannerPresented = false
     @Published var customers: [CustomerListItem] = []
     @Published var products: [ProductSummary] = []
+    @Published var selectedProductDetail: ProductDetail?
+    @Published var selectedProductAttributeId: Int = 0
+    @Published var productPriceDraft: String = ""
+    @Published var productQuantityDraft: String = ""
+    @Published var productActiveDraft: Bool = true
+    @Published var isSavingProduct = false
     @Published var liveActivity: LiveActivityResponse?
     @Published var customerSearch: String = ""
     @Published var productSearch: String = ""
@@ -1084,6 +1311,8 @@ final class MobileBridgeViewModel: ObservableObject {
             return "Clienti"
         case .products:
             return "Prodotti"
+        case .productDetail:
+            return "Dettaglio prodotto"
         case .liveActivity:
             return "Online / Carrelli"
         }
@@ -1372,6 +1601,128 @@ final class MobileBridgeViewModel: ObservableObject {
         }
     }
 
+    func openProductDetail(_ productId: Int) async {
+        guard let session else { return }
+
+        selectedProductDetail = nil
+        screen = .productDetail
+        isLoading = true
+        status = "Carico dettaglio prodotto..."
+        defer { isLoading = false }
+
+        do {
+            let detail = try await api.getProductInfo(
+                apiUrl: session.apiUrl,
+                sessionToken: session.sessionToken,
+                productId: productId
+            )
+
+            selectedProductDetail = detail
+            syncProductDrafts(from: detail)
+            status = "Dettaglio prodotto caricato."
+        } catch {
+            status = "Errore prodotto: \(error.localizedDescription)"
+        }
+    }
+
+    func reloadSelectedProduct() async {
+        guard let productId = selectedProductDetail?.idProduct else { return }
+        await openProductDetail(productId)
+    }
+
+    func selectProductAttribute(_ attributeId: Int) {
+        selectedProductAttributeId = attributeId
+        guard let product = selectedProductDetail else { return }
+
+        if let combination = product.combinations.first(where: { $0.idProductAttribute == attributeId }) {
+            productPriceDraft = String(format: "%.2f", combination.priceTaxIncl)
+            productQuantityDraft = "\(combination.quantity)"
+        } else {
+            productPriceDraft = String(format: "%.2f", product.priceTaxIncl)
+            productQuantityDraft = "\(product.quantity)"
+        }
+    }
+
+    func selectedProductCombinationName() -> String {
+        guard let product = selectedProductDetail else { return "Prodotto base" }
+
+        if selectedProductAttributeId == 0 {
+            return "Prodotto base"
+        }
+
+        if let combination = product.combinations.first(where: { $0.idProductAttribute == selectedProductAttributeId }) {
+            return combination.name.isEmpty ? "#\(combination.idProductAttribute)" : combination.name
+        }
+
+        return "Seleziona"
+    }
+
+    func saveProduct() async {
+        guard let session, let product = selectedProductDetail else { return }
+
+        isSavingProduct = true
+        status = "Salvo prodotto..."
+        defer { isSavingProduct = false }
+
+        do {
+            let result = try await api.updateProduct(
+                apiUrl: session.apiUrl,
+                sessionToken: session.sessionToken,
+                productId: product.idProduct,
+                productAttributeId: selectedProductAttributeId,
+                priceTaxIncl: productPriceDraft,
+                quantity: productQuantityDraft,
+                active: productActiveDraft
+            )
+
+            selectedProductDetail = result.product
+            syncProductDrafts(from: result.product)
+            updateProductSummaryFromDetail(result.product)
+            status = result.updatedFields.isEmpty ? "Prodotto salvato." : "Prodotto salvato: \(result.updatedFields.joined(separator: ", "))"
+        } catch {
+            status = "Errore salvataggio prodotto: \(error.localizedDescription)"
+        }
+    }
+
+    private func syncProductDrafts(from product: ProductDetail) {
+        if product.hasCombinations && product.defaultAttributeId > 0 {
+            selectedProductAttributeId = product.defaultAttributeId
+        } else {
+            selectedProductAttributeId = 0
+        }
+
+        if let combination = product.combinations.first(where: { $0.idProductAttribute == selectedProductAttributeId }) {
+            productPriceDraft = String(format: "%.2f", combination.priceTaxIncl)
+            productQuantityDraft = "\(combination.quantity)"
+        } else {
+            productPriceDraft = String(format: "%.2f", product.priceTaxIncl)
+            productQuantityDraft = "\(product.quantity)"
+        }
+
+        productActiveDraft = product.active
+    }
+
+    private func updateProductSummaryFromDetail(_ detail: ProductDetail) {
+        if let index = products.firstIndex(where: { $0.idProduct == detail.idProduct }) {
+            products[index] = ProductSummary(
+                idProduct: detail.idProduct,
+                name: detail.name,
+                reference: detail.reference,
+                supplierReference: detail.supplierReference,
+                ean13: detail.ean13,
+                upc: detail.upc,
+                priceTaxExcl: detail.priceTaxExcl,
+                priceTaxIncl: detail.priceTaxIncl,
+                quantity: detail.quantity,
+                active: detail.active,
+                manufacturerName: detail.manufacturerName,
+                imageUrl: detail.imageUrl,
+                hasCombinations: detail.hasCombinations,
+                combinationsCount: detail.combinations.count
+            )
+        }
+    }
+
     func openLiveActivity() async {
         screen = .liveActivity
         await loadLiveActivity(force: liveActivity == nil)
@@ -1404,6 +1755,10 @@ final class MobileBridgeViewModel: ObservableObject {
         screen = .orders
     }
 
+    func goProducts() {
+        screen = .products
+    }
+
     func logout() {
         store.clear()
         session = nil
@@ -1417,6 +1772,11 @@ final class MobileBridgeViewModel: ObservableObject {
         isTrackingScannerPresented = false
         customers = []
         products = []
+        selectedProductDetail = nil
+        selectedProductAttributeId = 0
+        productPriceDraft = ""
+        productQuantityDraft = ""
+        productActiveDraft = true
         liveActivity = nil
         isPairingScannerPresented = false
         screen = .connect

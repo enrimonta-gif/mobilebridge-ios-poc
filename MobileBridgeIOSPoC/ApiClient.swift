@@ -256,6 +256,46 @@ struct ProductSummary: Identifiable {
     var id: Int { idProduct }
 }
 
+struct ProductCombination: Identifiable {
+    let idProductAttribute: Int
+    let name: String
+    let reference: String
+    let supplierReference: String
+    let ean13: String
+    let upc: String
+    let priceImpact: Double
+    let priceTaxIncl: Double
+    let quantity: Int
+
+    var id: Int { idProductAttribute }
+}
+
+struct ProductDetail: Identifiable {
+    let idProduct: Int
+    let name: String
+    let descriptionShort: String
+    let reference: String
+    let supplierReference: String
+    let ean13: String
+    let upc: String
+    let priceTaxExcl: Double
+    let priceTaxIncl: Double
+    let quantity: Int
+    let active: Bool
+    let manufacturerName: String
+    let imageUrl: String
+    let hasCombinations: Bool
+    let defaultAttributeId: Int
+    let combinations: [ProductCombination]
+
+    var id: Int { idProduct }
+}
+
+struct ProductUpdateResult {
+    let updatedFields: [String]
+    let product: ProductDetail
+}
+
 struct LiveCartSummary: Identifiable {
     let idCart: Int
     let idCustomer: Int
@@ -612,6 +652,81 @@ final class MobileBridgeApiClient {
         return arrayValue(json["products"]).map { parseProductSummary($0) }
     }
 
+    func getProductInfo(apiUrl: String, sessionToken: String, productId: Int) async throws -> ProductDetail {
+        let url = try buildUrl(
+            base: apiUrl,
+            parameters: [
+                "call_function": "get_product_info",
+                "session_token": sessionToken,
+                "id_product": "\(productId)"
+            ]
+        )
+
+        let data = try await getData(from: url.absoluteString, sessionToken: sessionToken)
+        let json = try parseJsonDictionary(data)
+        try ensureOk(json, defaultMessage: "Dettaglio prodotto non disponibile")
+
+        let product = dictValue(json["product"])
+        if product.isEmpty {
+            throw MobileBridgeApiError.missingData("Il modulo non ha restituito il dettaglio prodotto")
+        }
+
+        return parseProductDetail(product)
+    }
+
+    func updateProduct(
+        apiUrl: String,
+        sessionToken: String,
+        productId: Int,
+        productAttributeId: Int,
+        priceTaxIncl: String,
+        quantity: String,
+        active: Bool?
+    ) async throws -> ProductUpdateResult {
+        var parameters: [String: String] = [
+            "call_function": "update_product",
+            "session_token": sessionToken,
+            "id_product": "\(productId)",
+            "id_product_attribute": "\(productAttributeId)"
+        ]
+
+        if !priceTaxIncl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            parameters["price_tax_incl"] = priceTaxIncl
+        }
+
+        if !quantity.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            parameters["quantity"] = quantity
+        }
+
+        if let active {
+            parameters["active"] = active ? "1" : "0"
+        }
+
+        let url = try buildUrl(base: apiUrl, parameters: parameters)
+        let data = try await getData(from: url.absoluteString, sessionToken: sessionToken)
+        let json = try parseJsonDictionary(data)
+        try ensureOk(json, defaultMessage: "Salvataggio prodotto non riuscito")
+
+        let product = dictValue(json["product"])
+        if product.isEmpty {
+            throw MobileBridgeApiError.missingData("Il modulo non ha restituito il prodotto aggiornato")
+        }
+
+        let fields: [String]
+        if let array = json["updated_fields"] as? [String] {
+            fields = array
+        } else if let anyArray = json["updated_fields"] as? [Any] {
+            fields = anyArray.compactMap { $0 as? String }
+        } else {
+            fields = []
+        }
+
+        return ProductUpdateResult(
+            updatedFields: fields,
+            product: parseProductDetail(product)
+        )
+    }
+
     func getLiveActivity(apiUrl: String, sessionToken: String) async throws -> LiveActivityResponse {
         let url = try buildUrl(
             base: apiUrl,
@@ -787,6 +902,41 @@ final class MobileBridgeApiClient {
             imageUrl: stringValue(dict["image_url"]),
             hasCombinations: boolValue(dict["has_combinations"]),
             combinationsCount: intValue(dict["combinations_count"])
+        )
+    }
+
+    private func parseProductDetail(_ dict: [String: Any]) -> ProductDetail {
+        ProductDetail(
+            idProduct: intValue(dict["id_product"]),
+            name: stringValue(dict["name"]),
+            descriptionShort: stringValue(dict["description_short"]),
+            reference: stringValue(dict["reference"]),
+            supplierReference: stringValue(dict["supplier_reference"]),
+            ean13: stringValue(dict["ean13"]),
+            upc: stringValue(dict["upc"]),
+            priceTaxExcl: doubleValue(dict["price_tax_excl"]),
+            priceTaxIncl: doubleValue(dict["price_tax_incl"]),
+            quantity: intValue(dict["quantity"]),
+            active: boolValue(dict["active"]),
+            manufacturerName: stringValue(dict["manufacturer_name"]),
+            imageUrl: stringValue(dict["image_url"]),
+            hasCombinations: boolValue(dict["has_combinations"]),
+            defaultAttributeId: intValue(dict["default_attribute_id"]),
+            combinations: arrayValue(dict["combinations"]).map { parseProductCombination($0) }
+        )
+    }
+
+    private func parseProductCombination(_ dict: [String: Any]) -> ProductCombination {
+        ProductCombination(
+            idProductAttribute: intValue(dict["id_product_attribute"]),
+            name: stringValue(dict["name"]),
+            reference: stringValue(dict["reference"]),
+            supplierReference: stringValue(dict["supplier_reference"]),
+            ean13: stringValue(dict["ean13"]),
+            upc: stringValue(dict["upc"]),
+            priceImpact: doubleValue(dict["price_impact"]),
+            priceTaxIncl: doubleValue(dict["price_tax_incl"]),
+            quantity: intValue(dict["quantity"])
         )
     }
 
