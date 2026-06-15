@@ -1,6 +1,6 @@
-# Mobile Bridge iOS PoC v0.6
+# Mobile Bridge iOS PoC v0.7
 
-Sesto test iOS, sempre senza Mac fisico, compilando con GitHub Actions su runner macOS.
+Settimo test iOS, sempre senza Mac fisico, compilando con GitHub Actions su runner macOS.
 
 ## Cosa fa
 
@@ -13,18 +13,19 @@ Sesto test iOS, sempre senza Mac fisico, compilando con GitHub Actions su runner
 - Clienti.
 - Prodotti.
 - Online/carrelli.
-- Nuova funzione v0.6:
-  - lettura corrieri da `get_carriers`;
-  - modifica corriere/tracking dal dettaglio ordine;
-  - salvataggio tramite `update_order_tracking`.
+- Corriere/tracking modificabili.
+- Nuova funzione v0.7:
+  - scanner barcode iOS per compilare il tracking;
+  - permesso camera `NSCameraUsageDescription`;
+  - lettura barcode con AVFoundation;
+  - il codice letto viene copiato nel campo tracking.
 
 ## Cosa NON fa ancora
 
 - Non installa su iPhone reale.
 - Non usa TestFlight.
 - Non usa firma/certificati Apple.
-- Non ha QR scanner.
-- Non ha ancora scanner barcode iOS per tracking.
+- Il QR scanner per pairing non è ancora presente.
 - Non modifica ancora prodotti da iOS.
 - Non ha notifiche push iOS.
 
@@ -37,4 +38,4 @@ Sesto test iOS, sempre senza Mac fisico, compilando con GitHub Actions su runner
 3. Vai su Actions.
 4. Lancia `Build iOS proof of concept`.
 
-Se la build passa, il prossimo step può essere scanner barcode tracking o dettaglio/modifica prodotto.
+Se la build passa, il prossimo step può essere dettaglio/modifica prodotto oppure QR scanner per pairing.

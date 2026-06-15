@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import AVFoundation
 
 private func formatCurrency(_ value: Double, currencyCode: String = "EUR") -> String {
     let formatter = NumberFormatter()
@@ -560,6 +561,18 @@ private struct OrderDetailView: View {
                                 }
 
                                 Button {
+                                    viewModel.isTrackingScannerPresented = true
+                                } label: {
+                                    HStack {
+                                        Image(systemName: "barcode.viewfinder")
+                                        Text("Scansiona barcode tracking")
+                                            .bold()
+                                    }
+                                    .frame(maxWidth: .infinity)
+                                }
+                                .buttonStyle(.bordered)
+
+                                Button {
                                     Task { await viewModel.saveTracking() }
                                 } label: {
                                     HStack {
@@ -647,6 +660,19 @@ private struct OrderDetailView: View {
         .task {
             await viewModel.loadOrderStatusesIfNeeded()
             await viewModel.loadCarriersIfNeeded()
+        }
+        .sheet(isPresented: $viewModel.isTrackingScannerPresented) {
+            BarcodeScannerView(
+                onCode: { code in
+                    viewModel.trackingDraft = code
+                    viewModel.isTrackingScannerPresented = false
+                    viewModel.status = "Barcode letto: \(code)"
+                },
+                onCancel: {
+                    viewModel.isTrackingScannerPresented = false
+                }
+            )
+            .ignoresSafeArea()
         }
     }
 }
@@ -815,6 +841,166 @@ private struct StatusBox: View {
     }
 }
 
+private struct BarcodeScannerView: UIViewControllerRepresentable {
+    let onCode: (String) -> Void
+    let onCancel: () -> Void
+
+    func makeUIViewController(context: Context) -> BarcodeScannerViewController {
+        let controller = BarcodeScannerViewController()
+        controller.onCode = onCode
+        controller.onCancel = onCancel
+        return controller
+    }
+
+    func updateUIViewController(_ uiViewController: BarcodeScannerViewController, context: Context) {
+    }
+}
+
+final class BarcodeScannerViewController: UIViewController, AVCaptureMetadataOutputObjectsDelegate {
+    var onCode: ((String) -> Void)?
+    var onCancel: (() -> Void)?
+
+    private let captureSession = AVCaptureSession()
+    private var previewLayer: AVCaptureVideoPreviewLayer?
+    private var didReadCode = false
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .black
+        configureCamera()
+        configureOverlay()
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        previewLayer?.frame = view.bounds
+    }
+
+    private func configureCamera() {
+        guard let videoDevice = AVCaptureDevice.default(for: .video) else {
+            showMessage("Fotocamera non disponibile")
+            return
+        }
+
+        do {
+            let videoInput = try AVCaptureDeviceInput(device: videoDevice)
+            guard captureSession.canAddInput(videoInput) else {
+                showMessage("Input fotocamera non disponibile")
+                return
+            }
+            captureSession.addInput(videoInput)
+
+            let metadataOutput = AVCaptureMetadataOutput()
+            guard captureSession.canAddOutput(metadataOutput) else {
+                showMessage("Scanner barcode non disponibile")
+                return
+            }
+            captureSession.addOutput(metadataOutput)
+
+            metadataOutput.setMetadataObjectsDelegate(self, queue: DispatchQueue.main)
+
+            let supportedTypes: [AVMetadataObject.ObjectType] = [
+                .ean8,
+                .ean13,
+                .code128,
+                .code39,
+                .code93,
+                .upce,
+                .qr,
+                .pdf417
+            ]
+            metadataOutput.metadataObjectTypes = supportedTypes.filter { metadataOutput.availableMetadataObjectTypes.contains($0) }
+
+            let layer = AVCaptureVideoPreviewLayer(session: captureSession)
+            layer.videoGravity = .resizeAspectFill
+            layer.frame = view.bounds
+            view.layer.insertSublayer(layer, at: 0)
+            previewLayer = layer
+
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                self?.captureSession.startRunning()
+            }
+        } catch {
+            showMessage("Errore fotocamera: \(error.localizedDescription)")
+        }
+    }
+
+    private func configureOverlay() {
+        let closeButton = UIButton(type: .system)
+        closeButton.setTitle("Chiudi", for: .normal)
+        closeButton.tintColor = .white
+        closeButton.backgroundColor = UIColor.black.withAlphaComponent(0.45)
+        closeButton.layer.cornerRadius = 12
+        closeButton.contentEdgeInsets = UIEdgeInsets(top: 10, left: 16, bottom: 10, right: 16)
+        closeButton.translatesAutoresizingMaskIntoConstraints = false
+        closeButton.addTarget(self, action: #selector(closeScanner), for: .touchUpInside)
+        view.addSubview(closeButton)
+
+        let guide = UILabel()
+        guide.text = "Inquadra il barcode dell’etichetta"
+        guide.textColor = .white
+        guide.textAlignment = .center
+        guide.font = UIFont.preferredFont(forTextStyle: .headline)
+        guide.backgroundColor = UIColor.black.withAlphaComponent(0.45)
+        guide.layer.cornerRadius = 12
+        guide.clipsToBounds = true
+        guide.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(guide)
+
+        NSLayoutConstraint.activate([
+            closeButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 16),
+            closeButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+
+            guide.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
+            guide.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24),
+            guide.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -30),
+            guide.heightAnchor.constraint(equalToConstant: 54)
+        ])
+    }
+
+    private func showMessage(_ message: String) {
+        let label = UILabel()
+        label.text = message
+        label.textColor = .white
+        label.textAlignment = .center
+        label.numberOfLines = 0
+        label.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(label)
+
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
+            label.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24),
+            label.centerYAnchor.constraint(equalTo: view.centerYAnchor)
+        ])
+    }
+
+    @objc private func closeScanner() {
+        captureSession.stopRunning()
+        onCancel?()
+    }
+
+    func metadataOutput(
+        _ output: AVCaptureMetadataOutput,
+        didOutput metadataObjects: [AVMetadataObject],
+        from connection: AVCaptureConnection
+    ) {
+        guard !didReadCode else { return }
+
+        guard
+            let object = metadataObjects.first as? AVMetadataMachineReadableCodeObject,
+            let code = object.stringValue,
+            !code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
+            return
+        }
+
+        didReadCode = true
+        captureSession.stopRunning()
+        onCode?(code)
+    }
+}
+
+
 @MainActor
 final class MobileBridgeViewModel: ObservableObject {
     enum Screen {
@@ -841,6 +1027,7 @@ final class MobileBridgeViewModel: ObservableObject {
     @Published var selectedCarrierId: Int = 0
     @Published var trackingDraft: String = ""
     @Published var isSavingTracking = false
+    @Published var isTrackingScannerPresented = false
     @Published var customers: [CustomerListItem] = []
     @Published var products: [ProductSummary] = []
     @Published var liveActivity: LiveActivityResponse?
@@ -1194,6 +1381,7 @@ final class MobileBridgeViewModel: ObservableObject {
         carriers = []
         selectedCarrierId = 0
         trackingDraft = ""
+        isTrackingScannerPresented = false
         customers = []
         products = []
         liveActivity = nil
